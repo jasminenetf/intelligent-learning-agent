@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>智学工坊 — AI 自动学习助手</title>
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="toast" class="toast" style="display:none"></div>
+
+<div class="app">
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">智</div>
+    <span class="logo-text">智学工坊</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" data-page="dashboard" id="nav-dashboard">
+      <span class="nav-icon">🏠</span><span>首页</span>
+    </div>
+    <div class="nav-item" data-page="assistant" id="nav-assistant">
+      <span class="nav-icon">💬</span><span>会话中心</span>
+    </div>
+    <div class="nav-item" data-page="courses" id="nav-courses">
+      <span class="nav-icon">📚</span><span>课程中心</span>
+    </div>
+    <div class="nav-item" data-page="generator" id="nav-generator">
+      <span class="nav-icon">⚡</span><span>资源生成</span>
+    </div>
+    <div class="nav-item" data-page="resource-center" id="nav-resource-center">
+      <span class="nav-icon">📦</span><span>资源中心</span>
+    </div>
+    <div class="nav-item" data-page="wrong-book" id="nav-wrong-book">
+      <span class="nav-icon">🧯</span><span>错题本</span>
+    </div>
+    <div class="nav-item" data-page="learning-report" id="nav-learning-report">
+      <span class="nav-icon">📊</span><span>学习报告</span>
+    </div>
+    <div class="nav-item" data-page="settings" id="nav-settings">
+      <span class="nav-icon">⚙️</span><span>账户与设置</span>
+    </div>
+    <!-- Advanced divider -->
+    <div class="nav-divider" id="nav-advanced-toggle" onclick="_toggleAdvanced()">
+      <span class="nav-icon">🔧</span><span>高级功能 ▾</span>
+      <span style="font-size:9px;color:var(--gray-400);margin-left:auto">调试用</span>
+    </div>
+    <div class="nav-advanced-group" id="nav-advanced-group" style="display:none">
+      <div class="nav-item nav-sub" data-page="dashboard">
+        <span class="nav-icon">📊</span><span>数据看板</span>
+      </div>
+      <div class="nav-item nav-sub" data-page="assistant">
+        <span class="nav-icon">💬</span><span>学习助手</span>
+      </div>
+      <div class="nav-item nav-sub" data-page="generator">
+        <span class="nav-icon">⚡</span><span>学习资源</span>
+      </div>
+      <div class="nav-item nav-sub" data-page="courses">
+        <span class="nav-icon">📚</span><span>课程管理</span>
+      </div>
+      <div class="nav-item nav-sub" data-page="knowledge">
+        <span class="nav-icon">🧠</span><span>课程资料库</span>
+      </div>
+      <div class="nav-item nav-sub" data-page="learning-path">
+        <span class="nav-icon">🗺️</span><span>学习计划</span>
+      </div>
+    </div>
+  </nav>
+  <div class="sidebar-footer" id="sidebar-footer">
+    <span class="status-dot offline"></span> 未连接
+  </div>
+</aside>
+
+<!-- ═══════════════════ MAIN AREA ═══════════════════ -->
+<div class="main-area">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-toggle" onclick="_toggleSidebar()">☰</span>
+      <span class="topbar-course" id="topbar-course">未选择</span>
+      <span class="topbar-badge warn" id="topbar-badge">未登录</span>
+    </div>
+    <div class="topbar-right">
+      <span style="font-size:11px;color:var(--gray-400)" id="topbar-time"></span>
+      <div class="topbar-user" id="topbar-user">
+        <button class="btn btn-sm btn-primary" onclick="_loginDemo()">演示账号登录</button>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="_logout()" style="display:none" id="btn-logout">退出</button>
+    </div>
+  </header>
+
+  <!-- ═══════ PAGE: Competition Demo (DEFAULT) ═══════ -->
+  <main class="page-content page active" id="page-competition">
+    <!-- Landing View -->
+    <div class="competition-landing" id="competition-landing">
+      <div class="competition-hero">
+        <div class="hero-icon">🏆</div>
+        <h1 class="hero-title">智学工坊 AI 自动学习助手</h1>
+        <p class="hero-subtitle">基于课程资料、学生画像和多智能体协同<br>为你提供个性化学习体验</p>
+        <div class="hero-features">
+          <div class="hero-feature">
+            <div class="hf-icon">🔍</div>
+            <div class="hf-label">画像抽取</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">📚</div>
+            <div class="hf-label">资料检索</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">💡</div>
+            <div class="hf-label">可信讲解</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">📖</div>
+            <div class="hf-label">引用溯源</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">🧠</div>
+            <div class="hf-label">思维导图</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">📝</div>
+            <div class="hf-label">智能测验</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">🗺️</div>
+            <div class="hf-label">学习路径</div>
+          </div>
+          <div class="hero-feature">
+            <div class="hf-icon">📊</div>
+            <div class="hf-label">PPT 学习包</div>
+          </div>
+        </div>
+        <button class="btn btn-lg btn-primary hero-cta" id="btn-start-demo" data-testid="demo-start" onclick="_startCompetition()">
+          🚀 开始 AI 学习演示
+        </button>
+        <p class="hero-hint">点击进入三栏学习流程，体验完整 AI 辅助学习</p>
+      </div>
+    </div>
+
+    <!-- Three-Column Learning Flow (hidden initially) -->
+    <div class="competition-flow" id="competition-flow" style="display:none">
+      <div class="comp-col comp-col-left">
+        <div class="comp-col-header">💬 AI 对话</div>
+        <div class="comp-chat-messages" id="comp-chat-messages">
+          <div class="comp-empty-state">
+            <div class="empty-icon">🤖</div>
+            <p>正在启动学习流程...</p>
+          </div>
+        </div>
+        <div class="comp-chat-input" id="comp-chat-input-bar">
+          <textarea id="comp-chat-input" placeholder="输入你的学习问题..." rows="2" style="display:none"></textarea>
+          <button class="btn btn-primary btn-sm" id="comp-btn-regenerate" onclick="_compRegenerate()" style="display:none">🔄 重新生成学习方案</button>
+        </div>
+      </div>
+
+      <div class="comp-col comp-col-center">
+        <div class="comp-col-header">
+          <span>📋 学习成果工作区</span>
+          <div class="comp-progress" id="comp-progress" style="display:none">
+            <span class="comp-progress-text" id="comp-progress-text"></span>
+          </div>
+        </div>
+        <div class="comp-workspace-tabs" id="comp-workspace-tabs">
+          <button class="comp-tab active" data-tab="mindmap">🧠 思维导图</button>
+          <button class="comp-tab" data-tab="quiz">📝 练习题库</button>
+          <button class="comp-tab" data-tab="study_plan">🗺️ 学习路径</button>
+          <button class="comp-tab" data-tab="lecture">📄 讲义/PPT</button>
+        </div>
+        <div class="comp-workspace" id="comp-workspace">
+          <div class="comp-empty-state" id="comp-ws-empty">
+            <div class="empty-icon">📋</div>
+            <p>等待生成学习成果</p>
+          </div>
+          <div class="comp-tab-panel" id="comp-panel-mindmap" style="display:none"></div>
+          <div class="comp-tab-panel" id="comp-panel-quiz" style="display:none"></div>
+          <div class="comp-tab-panel" id="comp-panel-study_plan" style="display:none"></div>
+          <div class="comp-tab-panel" id="comp-panel-lecture" style="display:none">
+            <div class="comp-empty-state"><div class="empty-icon">📊</div><p>讲义 与 PPT 学习包将在下一阶段生成</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="comp-col comp-col-right">
+        <div class="comp-col-header">📖 学习辅助</div>
+        <div class="comp-side-section" id="comp-citations">
+          <h4>📚 课程依据</h4>
+          <p style="font-size:11px;color:var(--gray-400)">回答内容基于课程资料整理，关键结论可追溯。</p>
+        </div>
+        <div class="comp-side-section" id="comp-profile">
+          <h4>🎓 学生画像</h4>
+          <p style="font-size:11px;color:var(--gray-400)" id="comp-profile-text">尚未提取画像</p>
+        </div>
+        <div class="comp-side-section" id="comp-agent-trace">
+          <h4>🤖 学习助手协作</h4>
+          <div id="comp-agent-trace-content">
+            <p style="font-size:11px;color:var(--gray-400)">提问后显示协作过程</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ PAGE: Dashboard ═══════ -->
+  <main class="page-content page" id="page-dashboard"></main>
+
+  <!-- ═══════ PAGE: Assistant ═══════ -->
+  <main class="page-content page" id="page-assistant">
+    <div class="assistant-layout">
+      <div class="chat-panel">
+        <div class="session-bar" id="session-bar">
+          <select id="session-select" title="学习会话历史" onchange="onSessionSelect(this.value)"></select>
+          <button type="button" class="btn btn-sm btn-outline" onclick="createNewSession()">+ 新会话</button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-area">
+          <div class="chat-input-row">
+            <textarea id="chat-input" placeholder="输入你想学习的问题，例如：过拟合和正则化有什么关系？" rows="2"></textarea>
+            <button class="btn btn-primary" onclick="_sendQuestion()">发送</button>
+          </div>
+          <div class="chat-quick-btns">
+            <button onclick="_quickGenerate('mindmap')">🧠 生成思维导图</button>
+            <button onclick="_quickGenerate('quiz')">📝 启动测验</button>
+            <button onclick="_quickGenerate('lecture_doc')">📄 生成讲义</button>
+            <button onclick="_quickGenerate('ppt')">📊 生成PPT</button>
+            <button onclick="_quickGenerate('study_plan')">🗺️ 学习路径</button>
+          </div>
+        </div>
+      </div>
+      <div class="artifacts-panel">
+        <div class="artifacts-tabs" id="artifacts-tabs"></div>
+        <div class="artifacts-content" id="artifacts-content">
+          <div class="tab-panel" id="artifact-mindmap"><div class="empty-state"><div class="empty-icon">🧠</div><p>思维导图展示区</p><p style="font-size:11px;color:var(--gray-400)">提问后生成或点击快捷按钮</p></div></div>
+          <div class="tab-panel" id="artifact-quiz"><div class="empty-state"><div class="empty-icon">📝</div><p>练习题库展示区</p></div></div>
+          <div class="tab-panel" id="artifact-lecture"><div class="empty-state"><div class="empty-icon">📄</div><p>讲义文档展示区</p></div></div>
+          <div class="tab-panel" id="artifact-ppt"><div class="empty-state"><div class="empty-icon">📊</div><p>PPT预习区</p></div></div>
+          <div class="tab-panel" id="artifact-study_plan"><div class="empty-state"><div class="empty-icon">🗺️</div><p>学习路径展示区</p></div></div>
+        </div>
+      </div>
+        <div class="citations-panel" id="citations-panel">
+        <h4>📚 课程依据</h4>
+        <p style="font-size:12px;color:var(--gray-400)">提问后显示引用来源</p>
+        <div style="margin-top:12px" id="agent-viz">
+          <h4>🤖 学习助手协作</h4>
+          <p style="font-size:11px;color:var(--gray-400)">提问后显示协作过程</p>
+        </div>
+        <div class="avatar-mini" id="avatar-mini" style="margin-top:12px">
+          <h4>🎬 数字人课堂助手</h4>
+          <p style="font-size:11px;color:var(--gray-400)" id="avatar-status-text">待配置</p>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">
+            <button class="btn btn-sm btn-outline" onclick="_avatarSpeakAnswer()" style="font-size:10px">🎤 讲解回答</button>
+            <button class="btn btn-sm btn-outline" onclick="_avatarSpeakPath()" style="font-size:10px">🗺️ 讲解路径</button>
+            <button class="btn btn-sm btn-outline" onclick="_avatarStop()" style="font-size:10px">⏹ 停止</button>
+          </div>
+        </div>
+        <div class="profile-mini" id="profile-mini" style="margin-top:12px">
+          <h4>🎓 学习画像</h4>
+          <canvas id="profileRadarChart" width="240" height="240" style="max-width:100%;margin:8px 0;display:none"></canvas>
+          <p style="font-size:11px;color:var(--gray-400)" id="profile-text">尚未提取画像</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ PAGE: Generator ═══════ -->
+  <main class="page-content page" id="page-generator"></main>
+
+  <!-- ═══════ PAGE: Courses ═══════ -->
+  <main class="page-content page" id="page-courses"></main>
+
+  <!-- ═══════ PAGE: Knowledge Base ═══════ -->
+  <main class="page-content page" id="page-knowledge"></main>
+
+  <!-- ═══════ PAGE: Learning Path ═══════ -->
+  <main class="page-content page" id="page-learning-path"></main>
+
+  <!-- ═══════ PAGE: Resource Center ═══════ -->
+  <main class="page-content page" id="page-resource-center"></main>
+
+  <!-- ═══════ PAGE: Settings ═══════ -->
+  <main class="page-content page" id="page-settings"></main>
+
+  <!-- ═══════ PAGE: Wrong Book ═══════ -->
+  <main class="page-content page" id="page-wrong-book"></main>
+
+  <!-- ═══════ PAGE: Learning Report ═══════ -->
+  <main class="page-content page" id="page-learning-report">
+    <div style="max-width:700px;margin:0 auto">
+      <div class="competition-hero" style="text-align:left;padding:0">
+        <h1 class="hero-title" style="font-size:22px;text-align:left">📊 学习报告</h1>
+        <p class="hero-subtitle" style="font-size:13px;text-align:left">查看你的学习进度、薄弱点和推荐复习资源</p>
+      </div>
+      <div id="lr-standalone"><div class="loading-block"><span class="spinner"></span> 加载中...</div></div>
+    </div>
+  </main>
+</div>
+</div>
+
+<script src="demo_payload.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

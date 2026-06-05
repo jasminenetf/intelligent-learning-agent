@@ -1,0 +1,85 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m compileall *)",
+      "Bash(node --check *)",
+      "Bash(bash scripts/claude_quality_gate.sh *)",
+      "Bash(bash scripts/e2e_browser_smoke.sh *)",
+      "Bash(git diff *)",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(cd backend && pip *)",
+      "Bash(python3 -m uvicorn *)",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "ask": [
+      "Bash(git push*)",
+      "Write(frontend-demo/*)",
+      "Write(backend/app/**/*.py)",
+      "Edit(frontend-demo/*)",
+      "Edit(backend/app/**/*.py)"
+    ],
+    "deny": [
+      "Read(backend/.env)",
+      "Read(.env)",
+      "Bash(cat backend/.env)",
+      "Bash(git rm *)",
+      "Bash(rm -rf *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE \"cat .*\\\\.env|rm -rf|git push.*--force\"; then echo 'BLOCKED: Dangerous command' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_FILE_PATHS\" | grep -q \"backend/.env\"; then echo 'BLOCKED: Cannot write to .env' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit(frontend-demo/app.js)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'JS changed - run: node --check frontend-demo/app.js'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit(backend/app/**/*.py)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Python changed - run: python -m compileall backend/app'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Claude task ended' >> /tmp/claude-activity.log"
+          }
+        ]
+      }
+    ]
+  }
+}
