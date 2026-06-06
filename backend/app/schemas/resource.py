@@ -15,6 +15,8 @@ class ResourceType(str, Enum):
     QUIZ = "quiz"
     PPT = "ppt"
     STUDY_PLAN = "study_plan"
+    READING = "reading"
+    VIDEO_SCRIPT = "video_script"
 
 
 # --- MindMap schemas ---

@@ -38,6 +38,7 @@ class CourseFileUploadResponse(BaseModel):
     filename: str
     status: str
     chunks: int
+    indexed_chunks: int = 0
 
 
 class ChunkRead(BaseModel):

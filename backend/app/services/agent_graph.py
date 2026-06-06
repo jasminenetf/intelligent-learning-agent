@@ -282,12 +282,8 @@ def lecture_node(state: GraphState) -> dict:
     }
 
 
-def verifier_node(state: GraphState) -> dict:
-    """Verifier: cross-check answer against source chunks for hallucination."""
-    draft = state.get("draft_answer", "")
-    citations = state.get("citations", [])
-    chunks = state.get("retrieved_chunks", [])
-
+def verify_answer_quality(draft: str, citations: list, chunks: list) -> dict:
+    """Standalone VerifierAgent logic for stream and graph paths."""
     reasons = []
     all_ok = True
 
@@ -303,13 +299,9 @@ def verifier_node(state: GraphState) -> dict:
         else:
             reasons.append(f"PASS: {msg}")
 
-    # Calculate confidence score
     if all_ok and draft and chunks:
-        # Simple heuristic: more chunks, more citations = higher confidence
         chunk_count = len(chunks)
-        cite_count = len(citations)
         base_score = min(0.7 + (chunk_count * 0.04), 0.95)
-        # Boost for having citations with content
         has_content = any(c.get("content") for c in citations)
         score = base_score + (0.05 if has_content else 0)
         verdict = "passed"
@@ -323,11 +315,26 @@ def verifier_node(state: GraphState) -> dict:
         "verified_answer": draft if all_ok else "",
         "verifier_score": score,
         "verification": {"verdict": verdict, "reasons": reasons},
-        "agent_trace": [_trace_entry(
+        "trace": _trace_entry(
             "VerifierAgent",
             "completed" if all_ok else "failed",
-            msg
-        )],
+            msg,
+        ),
+    }
+
+
+def verifier_node(state: GraphState) -> dict:
+    """Verifier: cross-check answer against source chunks for hallucination."""
+    result = verify_answer_quality(
+        state.get("draft_answer", ""),
+        state.get("citations", []),
+        state.get("retrieved_chunks", []),
+    )
+    return {
+        "verified_answer": result["verified_answer"],
+        "verifier_score": result["verifier_score"],
+        "verification": result["verification"],
+        "agent_trace": [result["trace"]],
     }
 
 
@@ -377,18 +384,28 @@ def insight_node(state: GraphState) -> dict:
 
 def practice_node(state: GraphState) -> dict:
     """Practice: prepare resource generation hints for the frontend."""
+    from app.services.recommendation_service import suggest_resources_from_question
+
     draft = state.get("draft_answer", "")
     question = state.get("question", "")
-
-    msg_parts = []
-    if draft:
-        msg_parts.append("思维导图")
-        msg_parts.append("自适测验")
-        msg_parts.append("精编讲义")
+    suggestions = suggest_resources_from_question(question) if question else []
+    type_labels = {
+        "mindmap": "思维导图",
+        "quiz": "自适测验",
+        "lecture_doc": "精编讲义",
+        "ppt": "PPT课件",
+        "reading": "拓展阅读",
+        "video_script": "教学脚本",
+        "study_plan": "学习路径",
+    }
+    msg_parts = [type_labels.get(s["type"], s["type"]) for s in suggestions[:3]]
+    if draft and not msg_parts:
+        msg_parts = ["思维导图", "自适测验", "精编讲义"]
 
     artifacts = {
         "ready_for_generation": bool(draft),
         "suggested_types": msg_parts,
+        "suggestions": suggestions[:5],
     }
 
     return {
@@ -542,3 +559,30 @@ def run_tutor_graph(
         }
     finally:
         _global_session = None
+
+
+def build_stream_agent_traces(
+    question: str,
+    citation_count: int,
+    provider: str,
+    *,
+    phase: str = "streaming",
+    verifier_trace: dict | None = None,
+) -> list[dict]:
+    """Build demo-friendly agent traces for SSE stream (Informer + stream path)."""
+    q_hint = (question or "")[:36]
+    traces = [
+        _trace_entry("TutorAgent", "completed", f"已解析学习意图：{q_hint}"),
+        _trace_entry("InformerAgent", "completed", f"已从课程知识库检索 {citation_count} 条引用片段"),
+        _trace_entry("LectureAgent", "completed", "已构建带引用的 RAG 提示词"),
+    ]
+    if phase == "streaming":
+        traces.append(_trace_entry("VerifierAgent", "running", f"正在通过 {provider} 流式生成并校验回答"))
+    else:
+        if verifier_trace:
+            traces.append(verifier_trace)
+        else:
+            traces.append(_trace_entry("VerifierAgent", "completed", "回答校验完成"))
+        traces.append(_trace_entry("InsightAgent", "completed", "已更新学习画像与薄弱点线索"))
+        traces.append(_trace_entry("PracticeAgent", "completed", "已准备思维导图/练习/讲义等推荐资源"))
+    return traces

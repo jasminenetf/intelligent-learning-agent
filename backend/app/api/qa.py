@@ -15,6 +15,7 @@ from app.schemas.qa import (
     LLMTestResponse,
 )
 from app.services.llm_provider import get_llm_provider
+from app.services.profile_service import update_profile_from_behavior
 from app.services.qa_service import answer_course_question
 
 router = APIRouter(tags=["llm-qa"])
@@ -59,6 +60,33 @@ def api_qa_ask_post(
     if "error" in result:
         code = 404 if "not found" in result["error"] else 400
         raise HTTPException(status_code=code, detail=result["error"])
+
+    try:
+        answer_text = result.get("answer", "")
+        citations = result.get("citations", [])
+        weak_points = []
+        for c in citations[:3]:
+            src = c.get("source") if isinstance(c, dict) else None
+            if src:
+                weak_points.append(str(src))
+        update_profile_from_behavior(
+            user,
+            session,
+            source="ask",
+            text=body.question,
+            weak_points=weak_points,
+            preferred_content=["lecture_doc"] if citations else [],
+            learning_goal=None,
+            knowledge_level=None,
+            cognitive_style="logical" if len(answer_text) > 120 else None,
+            learning_stage=None,
+            learning_pace=None,
+            motivation=None,
+            confidence=0.15 if citations else 0.05,
+        )
+    except Exception:
+        pass
+
     return AskResponse(**result)
 
 

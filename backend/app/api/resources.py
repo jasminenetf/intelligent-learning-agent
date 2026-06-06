@@ -6,10 +6,11 @@ GET  /api/resources/download/{resource_id}
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.auth import get_current_user
 from app.core.database import get_session
+from app.models.resource_artifact import ResourceArtifact
 from app.models.user import User
 from app.schemas.resource import ResourcePackRequest, ResourcePackResponse
 from app.services.generated_file_storage import (
@@ -19,6 +20,7 @@ from app.services.generated_file_storage import (
     validate_resource_id,
 )
 from app.services.resource_generator import generate_resource_pack
+from app.services.resource_orchestrator import generate_resource_pack_orchestrated, get_resource_job
 
 router = APIRouter(prefix="/api/resources", tags=["resources"])
 
@@ -92,9 +94,105 @@ def api_download_resource(
 @router.get("/generated")
 def api_list_generated_files(
     user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ):
     """List generated files for the current workspace."""
+    uid = int(user.id) if user.id else 0
+    artifacts = session.exec(
+        select(ResourceArtifact)
+        .where(ResourceArtifact.user_id == uid)
+        .order_by(ResourceArtifact.created_at.desc(), ResourceArtifact.id.desc())
+        .limit(50)
+    ).all()
+    files = list_generated_files(limit=50)
+    artifact_items = [
+        {
+            "resource_id": a.download_resource_id or a.artifact_id,
+            "artifact_id": a.artifact_id,
+            "job_id": a.job_id,
+            "original_filename": a.title,
+            "filename": a.title,
+            "content_type": a.resource_type,
+            "size": len(a.content or ""),
+            "status": "ready",
+            "created_at": a.created_at,
+            "quality_score": a.quality_score,
+            "topic": a.topic,
+        }
+        for a in artifacts
+    ]
     return {
         "ok": True,
-        "files": list_generated_files(limit=50),
+        "files": files + artifact_items,
+    }
+
+
+@router.post("/generate")
+def api_generate_orchestrated(
+    body: dict,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """Multi-agent orchestrated resource generation."""
+    course_id = int(body.get("course_id") or 0)
+    topic = (body.get("topic") or "").strip()
+    resource_types = body.get("resource_types") or ["lecture_doc", "mindmap", "quiz"]
+    if not course_id or not topic:
+        raise HTTPException(status_code=400, detail="course_id and topic are required")
+    return generate_resource_pack_orchestrated(
+        user=user,
+        session=session,
+        course_id=course_id,
+        topic=topic,
+        resource_types=list(resource_types),
+        difficulty=body.get("difficulty", "auto"),
+        goal=body.get("goal"),
+        top_k=int(body.get("top_k") or 5),
+    )
+
+
+@router.get("/generate/{job_id}")
+def api_get_generation_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    uid = int(user.id) if user.id else 0
+    job = get_resource_job(job_id, uid, session)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    return {"ok": True, "data": job}
+
+
+@router.get("/jobs")
+def api_list_generation_jobs(
+    limit: int = 20,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    from app.models.resource_job import ResourceJob
+
+    uid = int(user.id) if user.id else 0
+    rows = session.exec(
+        select(ResourceJob)
+        .where(ResourceJob.user_id == uid)
+        .order_by(ResourceJob.created_at.desc(), ResourceJob.id.desc())
+        .limit(limit)
+    ).all()
+    return {
+        "ok": True,
+        "data": {
+            "items": [
+                {
+                    "job_id": r.job_id,
+                    "course_id": r.course_id,
+                    "topic": r.topic,
+                    "status": r.status,
+                    "progress": r.progress,
+                    "current_agent": r.current_agent,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+        },
     }

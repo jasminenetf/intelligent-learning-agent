@@ -218,6 +218,31 @@ class FallbackProvider(BaseLLMProvider):
         mock = MockLLMProvider()
         return mock.generate(messages, temperature)
 
+    def stream_generate(
+        self, messages: list[dict], temperature: float = 0.2
+    ) -> Iterator[str]:
+        try:
+            yield from self._primary.stream_generate(messages, temperature)
+            return
+        except Exception as e:
+            err_msg = str(e)[:150]
+            logger.warning("LLM stream: %s failed (%s), trying fallback", self._primary.provider, err_msg)
+
+        fallback = None
+        if self._primary.provider == "spark":
+            fallback = _make_deepseek()
+        elif self._primary.provider == "deepseek" and settings.SPARK_ENABLED:
+            fallback = _make_spark()
+
+        if fallback:
+            try:
+                yield from fallback.stream_generate(messages, temperature)
+                return
+            except Exception as e2:
+                logger.warning("LLM stream fallback failed (%s)", str(e2)[:100])
+
+        yield from MockLLMProvider().stream_generate(messages, temperature)
+
 
 def get_llm_provider() -> BaseLLMProvider:
     """Get or create the configured LLM provider with fallback chain."""

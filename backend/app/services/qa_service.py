@@ -110,4 +110,5 @@ def prepare_stream_answer(
         "question": question,
         "messages": messages,
         "citations": citations,
+        "retrieved_chunks": chunks,
     }

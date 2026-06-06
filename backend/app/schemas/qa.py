@@ -39,8 +39,8 @@ class AskResponse(BaseModel):
     answer: str
     provider: str
     model: str
-    citations: list[Citation] = []
-    retrieved_chunks: list[RetrievedChunk] = []
+    citations: list[Citation] = Field(default_factory=list)
+    retrieved_chunks: list[RetrievedChunk] = Field(default_factory=list)
 
 
 class LLMTestRequest(BaseModel):

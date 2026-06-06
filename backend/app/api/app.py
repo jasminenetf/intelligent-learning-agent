@@ -1,10 +1,10 @@
 """
-Product aggregation API — unified frontend-friendly endpoints.
+Application workspace API.
 
 Prefix: /api/app
 
-Provides bootstrap, demo-init, dashboard, ask, generate, run-demo
-so the frontend doesn't need to stitch together dozens of low-level APIs.
+Provides bootstrap, dashboard, ask, generate and related
+workspace endpoints for the learning product UI.
 """
 
 import json
@@ -22,24 +22,27 @@ from sqlmodel import Session, select
 from app.api.auth import get_current_user, get_current_user_optional
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.security import create_access_token
-from app.models.course import Course
-from app.models.knowledge_chunk import KnowledgeChunk
 from app.models.quiz_attempt import QuizAttempt
 from app.models.student_profile import StudentProfile
 from app.models.user import User
 from app.schemas.resource import ResourceType
-from app.services.llm_provider import get_llm_provider
-from app.services.profile_service import (
-    extract_profile,
-    get_or_create_profile,
-    update_profile_from_extraction,
-)
 from app.api.learning_sessions import add_message, get_or_create_session
+from app.services.llm_provider import get_llm_provider
 from app.services.qa_service import answer_course_question, prepare_stream_answer
-from app.services.rag_service import search_course, get_rag_status
+from app.services.recommendation_service import (
+    build_profile_next_actions,
+    suggest_resources_from_question,
+)
 from app.services.resource_generator import generate_resource_pack
 from app.services.study_plan_service import generate_study_plan
+from app.api.workspace import (
+    ok as _ok,
+    err as _err,
+    safe_obj as _safe,
+    dashboard_payload,
+    bootstrap_payload,
+    llm_configured,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/app", tags=["app"])
@@ -52,331 +55,32 @@ ERR_NO_KNOWLEDGE_BASE = "NO_KNOWLEDGE_BASE"
 ERR_LLM_FAILED = "LLM_FAILED"
 ERR_RESOURCE_FAILED = "RESOURCE_FAILED"
 
-# ── Helpers ────────────────────────────────────────────────────────────
-
-def _safe(obj):
-    """Convert to JSON-safe dict."""
-    if obj is None:
-        return {}
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    if hasattr(obj, "dict"):
-        return obj.dict()
-    return obj
-
-
-def _chunk_count(course_id: int, session: Session) -> int:
-    return session.exec(
-        select(KnowledgeChunk).where(KnowledgeChunk.course_id == course_id)
-    ).all().__len__()
-
-
-def _hash_uid(username: str) -> str:
-    """Deterministic short hash for demo user IDs."""
-    import hashlib
-    return hashlib.md5(username.encode()).hexdigest()[:8]
+# Helpers and workspace routes moved to `app/api/workspace.py`.
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# GET /api/app/bootstrap
+# GET /api/app/bootstrap — app init payload (guest or authenticated)
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.get("/bootstrap")
-def api_bootstrap(
+def api_app_bootstrap(
     user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session),
 ):
-    """Frontend opens → get startup state in one call. No auth required."""
-    # LLM status
-    try:
-        provider = get_llm_provider()
-        config = {
-            "deepseek_configured": bool(settings.DEEPSEEK_API_KEY),
-            "llm_provider": provider.provider,
-            "is_mock": (provider.provider == "mock"),
-            "embedding_provider": settings.EMBEDDING_PROVIDER,
-            "embedding_is_mock": (settings.EMBEDDING_PROVIDER == "hash_mock"),
-        }
-    except Exception:
-        config = {
-            "deepseek_configured": False,
-            "llm_provider": "unknown",
-            "is_mock": True,
-            "embedding_provider": settings.EMBEDDING_PROVIDER,
-            "embedding_is_mock": True,
-        }
-
-    # User
-    authenticated = user is not None
-    user_info = {}
-    if authenticated and user:
-        user_info = {
-            "authenticated": True,
-            "username": user.username,
-            "role": user.role,
-        }
-    else:
-        user_info = {"authenticated": False}
-
-    # Courses — always list (not sensitive), but user_info shows auth state
-    courses = session.exec(select(Course)).all()
-    course_list = []
-    for c in courses:
-        chunks = _chunk_count(int(c.id) if c.id else 0, session)
-        course_list.append({
-            "id": c.id,
-            "name": c.name,
-            "chunks_count": chunks,
-            "has_knowledge_base": chunks > 0,
-        })
-
-    # Profile
-    profile_exists = False
-    if authenticated and user:
-        profile = session.exec(
-            select(StudentProfile).where(StudentProfile.user_id == int(user.id) if user.id else 0)
-        ).first()
-        profile_exists = profile is not None
-
-    # Next step
-    if not config["deepseek_configured"]:
-        next_step = "configure_key"
-    elif not authenticated:
-        next_step = "login"
-    elif not course_list:
-        next_step = "create_course"
-    else:
-        next_step = "start_learning"
-
-    # Select best course: prefer KB courses first
-    selected_course = {}
-    kb_courses = [c for c in course_list if c.get("has_knowledge_base")]
-    if kb_courses:
-        # Prefer 高等数学上, then most chunks
-        kb_courses.sort(key=lambda c: (
-            0 if "高等数学上" in (c.get("name") or "") else 1,
-            -(c.get("chunks_count") or 0)
-        ))
-        selected_course = kb_courses[0]
-    elif course_list:
-        selected_course = course_list[0]
-
-    return {
-        "ok": True,
-        "app_ready": config["deepseek_configured"] and authenticated and bool(course_list),
-        "config": config,
-        "user": user_info,
-        "courses": course_list,
-        "selected_course": selected_course,
-        "profile_exists": profile_exists,
-        "next_step": next_step,
-    }
+    return bootstrap_payload(user, session)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# POST /api/app/demo-init
-# ═══════════════════════════════════════════════════════════════════════
-
-_DEMO_USERNAME = "demo"
-_DEMO_PASSWORD = "demo123456"
-_DEMO_COURSE_NAME = "高等数学"
-
-
-@router.post("/demo-init")
-def api_demo_init(session: Session = Depends(get_session)):
-    """One-click demo environment init. Returns token + course + profile."""
-    from app.core.security import get_password_hash
-
-    # 1. Find or create demo teacher
-    user = session.exec(select(User).where(User.username == _DEMO_USERNAME)).first()
-    created_user = False
-    if not user:
-        user = User(
-            username=_DEMO_USERNAME,
-            hashed_password=get_password_hash(_DEMO_PASSWORD),
-            role="teacher",
-        )
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-        created_user = True
-        logger.info("Created demo teacher user (id=%s)", user.id)
-
-    # 2. Create token
-    token = create_access_token(data={"sub": str(user.id)})
-
-    # 3. Smart course selection: prefer courses with knowledge base
-    all_courses = session.exec(select(Course)).all()
-    created_course = False
-    course = None
-
-    # Build list of (course, chunks_count)
-    ranked = []
-    for c in all_courses:
-        chunks = _chunk_count(int(c.id) if c.id else 0, session)
-        ranked.append((c, chunks))
-
-    # Sort: AI Intro first, then KB courses (by chunks desc), then non-KB by name match
-    def _course_rank(item):
-        c, chunks = item
-        name = (c.name or "").lower()
-        score = 0
-        # AI Introduction gets highest priority
-        if "人工智能导论" in name and chunks > 0:
-            score += 2000 + chunks
-        elif "人工智能" in name and chunks > 0:
-            score += 1500 + chunks
-        if chunks > 0:
-            score += 1000 + chunks  # KB courses first, more chunks = better
-        if "高等数学上" in name:
-            score += 500  # exact preferred course
-        elif "高等数学" in name:
-            score += 300
-        return -score  # descending
-
-    ranked.sort(key=_course_rank)
-
-    if ranked:
-        course = ranked[0][0]
-        chosen_chunks_pre = ranked[0][1]
-        logger.info("Demo course selected: id=%s name=%s chunks=%d",
-                     course.id, course.name, chosen_chunks_pre)
-    else:
-        # No courses at all — create one
-        course = Course(
-            name=_DEMO_COURSE_NAME,
-            description="高等数学个性化学习示例课程",
-            teacher_id=int(user.id) if user.id else 0,
-        )
-        session.add(course)
-        session.commit()
-        session.refresh(course)
-        created_course = True
-        logger.info("Created demo course '%s' (id=%s)", _DEMO_COURSE_NAME, course.id)
-
-    cid = int(course.id) if course.id else 0
-
-    # 4. Chunks count
-    chunks = _chunk_count(cid, session)
-    has_kb = chunks > 0
-
-    # 5. Profile — extract if not exists or if just created
-    profile = session.exec(
-        select(StudentProfile).where(StudentProfile.user_id == int(user.id) if user.id else 0)
-    ).first()
-    profile_created = False
-    if not profile:
-        profile = StudentProfile(user_id=int(user.id) if user.id else 0)
-        session.add(profile)
-        session.commit()
-        session.refresh(profile)
-        profile_created = True
-
-    # Auto-extract profile if new
-    extracted = {}
-    if profile_created or created_user:
-        try:
-            extracted = update_profile_from_extraction(
-                user, "我是数学专业学生，基础薄弱，喜欢通过思维导图和练习题来学习，准备考研", session
-            )
-        except Exception as e:
-            logger.warning("Demo profile extract failed: %s", e)
-            extracted = {}
-
-    # 6. Next step & message
-    if not settings.DEEPSEEK_API_KEY:
-        next_step = "configure_key"
-        message = None
-    elif not has_kb:
-        next_step = "upload_materials_or_try_demo"
-        message = "当前示例课程暂无知识库，可上传资料或切换到已有知识库课程"
-    else:
-        next_step = "start_learning"
-        message = None
-
-    return {
-        "ok": True,
-        "token": token,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "role": user.role,
-        },
-        "course": {
-            "id": course.id,
-            "name": course.name,
-            "chunks_count": chunks,
-            "has_knowledge_base": has_kb,
-            "recommended_for_demo": has_kb,
-        },
-        "profile": extracted if extracted else _safe(profile),
-        "next_step": next_step,
-        "message": message,
-        "actions": {
-            "user_created": created_user,
-            "course_created": created_course,
-            "profile_extracted": bool(extracted),
-        },
-    }
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# GET /api/app/dashboard
+# GET /api/app/dashboard — course workspace summary
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.get("/dashboard")
-def api_dashboard(
-    course_id: int = 2,
+def api_app_dashboard(
+    course_id: Optional[int] = None,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Workbench data: course + KB + profile + recent resources."""
-    cid = course_id
-    course = session.get(Course, cid)
-    if not course:
-        raise HTTPException(status_code=404, detail=ERR_COURSE_NOT_FOUND)
-
-    chunks = _chunk_count(cid, session)
-    try:
-        rag = get_rag_status()
-    except Exception:
-        rag = {"vector_count": 0, "embedding_provider": "unknown"}
-
-    profile = session.exec(
-        select(StudentProfile).where(StudentProfile.user_id == int(user.id) if user.id else 0)
-    ).first()
-
-    # Suggested actions
-    suggested = []
-    if not settings.DEEPSEEK_API_KEY:
-        suggested.append({"action": "configure_key", "label": "配置 DeepSeek API Key"})
-    if chunks == 0:
-        suggested.append({"action": "upload_materials", "label": "上传课程资料构建知识库"})
-    if not profile:
-        suggested.append({"action": "extract_profile", "label": "分析学习特征生成画像"})
-    if suggested:
-        suggested.append({"action": "start_qa", "label": "在「学习助手」中提问"})
-    else:
-        suggested.append({"action": "start_qa", "label": "去学习助手提问"})
-
-    return {
-        "ok": True,
-        "course": {
-            "id": course.id,
-            "name": course.name,
-            "description": course.description,
-        },
-        "knowledge_base": {
-            "chunks_count": chunks,
-            "vector_ready": rag.get("vector_count", 0) > 0,
-            "vector_count": rag.get("vector_count", 0),
-            "status": "ready" if chunks > 0 else "no_data",
-        },
-        "profile": _safe(profile) if profile else None,
-        "profile_exists": profile is not None,
-        "recent_resources": [],
-        "suggested_actions": suggested,
-    }
+    return dashboard_payload(course_id, user, session)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -399,8 +103,8 @@ def api_app_ask(
     session: Session = Depends(get_session),
 ):
     """Unified Q&A — multi-agent graph pipeline with agent traces."""
-    if not settings.DEEPSEEK_API_KEY:
-        raise HTTPException(status_code=400, detail=ERR_NOT_CONFIGURED)
+    if not llm_configured():
+        _err(ERR_NOT_CONFIGURED, "model service not configured", status_code=400)
 
     result = None
     _course_name = ""
@@ -424,9 +128,8 @@ def api_app_ask(
                 body.course_id, body.question, body.top_k, session, user
             )
             if "error" in result:
-                raise HTTPException(status_code=400, detail=result["error"])
-            return {
-                "ok": True,
+                _err(ERR_LLM_FAILED, result["error"], status_code=400)
+            return _ok({
                 "answer": result.get("answer", ""),
                 "course_name": result.get("course_name", ""),
                 "provider": result.get("provider", "unknown"),
@@ -436,21 +139,25 @@ def api_app_ask(
                 "used_rag": bool(result.get("citations")),
                 "agent_traces": [],
                 "status": "ok",
-            }
+            })
         except Exception as e2:
-            raise HTTPException(status_code=500, detail=f"{ERR_LLM_FAILED}: {e2}")
+            _err(ERR_LLM_FAILED, str(e2), status_code=500)
 
     if not result:
-        raise HTTPException(status_code=500, detail=f"{ERR_LLM_FAILED}: no result produced")
+        _err(ERR_LLM_FAILED, "no result produced", status_code=500)
 
     if result.get("error"):
-        raise HTTPException(status_code=400, detail=result["error"])
+        _err(ERR_LLM_FAILED, result["error"], status_code=400)
 
     citations = result.get("citations", [])
     answer_text = result.get("answer", "")
 
-    response_payload = {
-        "ok": True,
+    profile_row = session.exec(
+        select(StudentProfile).where(StudentProfile.user_id == int(user.id) if user.id else 0)
+    ).first()
+    resource_suggestions = suggest_resources_from_question(body.question, profile_row)
+
+    response_payload = _ok({
         "answer": answer_text,
         "course_name": _course_name,
         "citations": citations,
@@ -459,10 +166,28 @@ def api_app_ask(
         "student_profile": result.get("student_profile", {}),
         "verifier_score": result.get("verifier_score", 0.0),
         "generated_artifacts": result.get("generated_artifacts", {}),
+        "resource_suggestions": resource_suggestions,
         "retrieved_chunks": [],
         "used_rag": len(citations) > 0,
         "status": result.get("status", "ok"),
-    }
+    })
+
+    if len(body.question.strip()) >= 15:
+        try:
+            from app.services.profile_service import update_profile_from_extraction
+
+            extracted = update_profile_from_extraction(
+                user, body.question, session, source="ask"
+            )
+            if not response_payload["data"].get("student_profile"):
+                response_payload["data"]["student_profile"] = {
+                    "knowledge_level": extracted.get("knowledge_level"),
+                    "learning_goal": extracted.get("learning_goal"),
+                    "weak_points": extracted.get("weak_points"),
+                    "emotion_tendency": extracted.get("emotion_tendency"),
+                }
+        except Exception:
+            logger.exception("Failed to update profile from ask")
 
     try:
         from app.api.analytics import AuditLog
@@ -478,7 +203,7 @@ def api_app_ask(
             action=("question_answered_with_citations" if citations else "question_answered_without_citations"),
             target_type="course",
             target_id=str(body.course_id),
-            detail=f"citations={len(citations)} verifier={response_payload['verifier_score']}",
+            detail=f"citations={len(citations)} verifier={response_payload.get('data', {}).get('verifier_score', 0.0)}",
         ))
         session.commit()
     except Exception:
@@ -522,7 +247,7 @@ async def api_app_ask_stream(
     session: Session = Depends(get_session),
 ):
     """Stream RAG answer via Server-Sent Events (commercial UX)."""
-    if not settings.DEEPSEEK_API_KEY and not settings.SPARK_API_PASSWORD:
+    if not llm_configured():
         raise HTTPException(status_code=400, detail=ERR_NOT_CONFIGURED)
 
     prep = prepare_stream_answer(body.course_id, body.question, body.top_k, session)
@@ -539,12 +264,19 @@ async def api_app_ask_stream(
     add_message(session, ls, "user", body.question)
 
     provider = get_llm_provider()
+    citation_count = len(prep.get("citations", []))
+    from app.services.agent_graph import build_stream_agent_traces
+
+    agent_traces = build_stream_agent_traces(
+        body.question, citation_count, provider.provider, phase="streaming"
+    )
     meta = {
         "session_id": ls.id,
         "course_name": prep.get("course_name", ""),
         "citations": prep.get("citations", []),
         "provider": provider.provider,
         "model": provider.model,
+        "agent_traces": agent_traces,
     }
 
     async def event_generator():
@@ -562,6 +294,58 @@ async def api_app_ask_stream(
             return
 
         full_answer = "".join(full_parts)
+
+        from app.services.agent_graph import verify_answer_quality
+
+        verify_result = verify_answer_quality(
+            full_answer,
+            prep.get("citations", []),
+            prep.get("retrieved_chunks", []),
+        )
+        verifier_score = verify_result["verifier_score"]
+
+        profile_row = session.exec(
+            select(StudentProfile).where(StudentProfile.user_id == int(user.id) if user.id else 0)
+        ).first()
+        resource_suggestions = suggest_resources_from_question(body.question, profile_row)
+        final_traces = build_stream_agent_traces(
+            body.question,
+            citation_count,
+            provider.provider,
+            phase="done",
+            verifier_trace=verify_result.get("trace"),
+        )
+        generated_artifacts = {
+            "ready_for_generation": bool(full_answer),
+            "suggestions": resource_suggestions[:5],
+        }
+
+        student_profile = {}
+        try:
+            from app.services.profile_service import (
+                update_profile_from_behavior,
+                update_profile_from_extraction,
+            )
+            update_profile_from_behavior(
+                user,
+                session,
+                source="ask",
+                text=body.question[:200],
+                learning_stage="practice",
+                confidence=0.05,
+            )
+            if len(body.question.strip()) >= 15:
+                extracted = update_profile_from_extraction(
+                    user, body.question, session, source="ask"
+                )
+                student_profile = {
+                    "knowledge_level": extracted.get("knowledge_level"),
+                    "learning_goal": extracted.get("learning_goal"),
+                    "weak_points": extracted.get("weak_points"),
+                }
+        except Exception:
+            logger.exception("Failed to update profile after streamed ask")
+
         try:
             add_message(
                 session,
@@ -578,8 +362,33 @@ async def api_app_ask_stream(
         except Exception:
             logger.exception("Failed to persist streamed answer")
 
+        try:
+            from app.api.analytics import AuditLog
+            session.add(AuditLog(
+                user_id=int(user.id),
+                action="question_answered_stream",
+                target_type="course",
+                target_id=str(body.course_id),
+                detail=f"citations={len(prep.get('citations', []))} provider={provider.provider}",
+            ))
+            session.commit()
+        except Exception:
+            logger.exception("Failed to store stream ask audit log")
+
         done = json.dumps(
-            {"answer": full_answer, "session_id": ls.id},
+            {
+                "answer": full_answer,
+                "session_id": ls.id,
+                "citations": prep.get("citations", []),
+                "resource_suggestions": resource_suggestions,
+                "course_name": prep.get("course_name", ""),
+                "provider": provider.provider,
+                "model": provider.model,
+                "agent_traces": final_traces,
+                "verifier_score": verifier_score,
+                "student_profile": student_profile,
+                "generated_artifacts": generated_artifacts,
+            },
             ensure_ascii=False,
         )
         yield f"event: done\ndata: {done}\n\n"
@@ -614,14 +423,14 @@ def api_app_generate(
     rtype = body.resource_type.strip().lower()
 
     # Validate type
-    valid_types = {"mindmap", "lecture_doc", "quiz", "ppt", "study_plan"}
+    valid_types = {"mindmap", "lecture_doc", "quiz", "ppt", "study_plan", "reading", "video_script"}
     if rtype not in valid_types:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid resource_type: {rtype}. Use: {', '.join(sorted(valid_types))}",
         )
 
-    if not settings.DEEPSEEK_API_KEY:
+    if not llm_configured():
         raise HTTPException(status_code=400, detail=ERR_NOT_CONFIGURED)
 
     # Get profile for personalization
@@ -668,11 +477,10 @@ def api_app_generate(
         )
 
         if not pack.resources:
-            raise HTTPException(status_code=500, detail="no resources generated")
+            _err(ERR_RESOURCE_FAILED, "no resources generated", status_code=500)
 
         res = pack.resources[0]
-        result = {
-            "ok": True,
+        result = _ok({
             "resource_type": res.type.value if hasattr(res.type, "value") else str(res.type),
             "title": res.title,
             "content": res.content if res.content else "",
@@ -689,7 +497,7 @@ def api_app_generate(
                 "model": "deepseek-chat",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
-        }
+        })
 
         return result
 
@@ -717,7 +525,8 @@ def api_run_demo(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    """Orchestrated demo pipeline. Returns step-by-step results."""
+    """Deprecated demo pipeline endpoint."""
+    _err("DEPRECATED", "run_demo is deprecated. Use the standard workspace endpoints instead.", status_code=410)
     steps = []
 
     def add_step(name, ok, detail=""):
@@ -726,6 +535,14 @@ def api_run_demo(
 
     cid = course_id
     topic = "导数与极限入门"
+    course_name = "高等数学上"
+
+    try:
+        course = session.exec(select(Course).where(Course.id == cid)).first()
+        if course and course.name:
+            course_name = course.name
+    except Exception:
+        logger.exception("Failed to resolve course name for demo run")
 
     # Captured results for frontend
     answer_text = ""
@@ -823,12 +640,11 @@ def api_run_demo(
         pass  # non-critical
 
     success_count = sum(1 for s in steps if s["status"] == "success")
-    return {
-        "ok": success_count >= 4,
+    return _ok({
         "steps": steps,
         "summary": f"{success_count}/{len(steps)} steps successful",
-        "demo_results": {
-            "course": {"id": cid, "name": "高等数学上"},
+        "results": {
+            "course": {"id": cid, "name": course_name},
             "profile": profile_data,
             "question": topic,
             "answer": answer_text,
@@ -840,7 +656,7 @@ def api_run_demo(
             ],
             "resources": resources,
         },
-    }
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -909,14 +725,32 @@ def api_quiz_submit(
                 session.add(profile)
                 session.commit()
                 updated_weak_points = existing
+    try:
+        from app.services.profile_service import update_profile_from_behavior
+        update_profile_from_behavior(
+            user,
+            session,
+            source="quiz",
+            text=body.question_text or body.topic or "quiz_attempt",
+            weak_points=updated_weak_points or ([body.knowledge_point] if (not body.is_correct and body.knowledge_point) else []),
+            preferred_content=["quiz", "lecture_doc"] if not body.is_correct else ["quiz"],
+            learning_goal=None,
+            knowledge_level=None,
+            cognitive_style="practice_oriented",
+            learning_stage="review" if not body.is_correct else "practice",
+            learning_pace=None,
+            motivation=None,
+            confidence=0.2 if not body.is_correct else 0.1,
+        )
+    except Exception:
+        pass
 
-    return {
-        "ok": True,
+    return _ok({
         "attempt_id": int(attempt.id) if attempt.id else 0,
         "is_correct": body.is_correct,
         "updated_weak_points": updated_weak_points,
         "message": "作答已记录，学习画像已更新",
-    }
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -943,16 +777,26 @@ def api_learning_report(
 
     attempts = session.exec(stmt).all()
 
+    profile = session.exec(
+        select(StudentProfile).where(StudentProfile.user_id == uid)
+    ).first()
+
     total = len(attempts)
     if total == 0:
-        return {
+        next_actions = build_profile_next_actions(profile, [], 0.0) if profile else []
+        return _ok({
             "total_attempts": 0,
             "correct_count": 0,
             "accuracy": 0.0,
             "weak_points": [],
             "recommended_resources": [],
+            "next_actions": next_actions,
+            "profile_summary": {
+                "learning_goal": getattr(profile, "learning_goal", None) if profile else None,
+                "knowledge_level": getattr(profile, "knowledge_level", None) if profile else None,
+            },
             "profile_updated": False,
-        }
+        })
 
     correct = sum(1 for a in attempts if a.is_correct)
     accuracy = round(correct / total, 2) if total > 0 else 0.0
@@ -986,17 +830,39 @@ def api_learning_report(
             {"type": "study_plan", "title": "个性化学习路径"},
         ]
 
-    # Check if profile has updated weak_points
-    profile = session.exec(
-        select(StudentProfile).where(StudentProfile.user_id == uid)
-    ).first()
     profile_updated = bool(profile and profile.weak_points and profile.weak_points != "[]")
+    next_actions = build_profile_next_actions(profile, weak_points, accuracy)
 
-    return {
+    try:
+        from app.services.profile_service import update_profile_from_behavior
+        update_profile_from_behavior(
+            user,
+            session,
+            source="report",
+            text=topic or f"course={course_id or 'all'}",
+            weak_points=weak_points[:5],
+            preferred_content=[r.get("type", "quiz") for r in recommended[:3] if isinstance(r, dict)],
+            learning_goal=None,
+            knowledge_level=None,
+            cognitive_style="logical" if accuracy >= 0.8 else "practice_oriented",
+            learning_stage="review" if accuracy < 0.5 else ("practice" if accuracy < 0.8 else "advanced"),
+            learning_pace="slow" if accuracy < 0.4 else "moderate",
+            motivation=None,
+            confidence=0.12,
+        )
+    except Exception:
+        pass
+
+    return _ok({
         "total_attempts": total,
         "correct_count": correct,
         "accuracy": accuracy,
         "weak_points": weak_points,
         "recommended_resources": recommended,
+        "next_actions": next_actions,
+        "profile_summary": {
+            "learning_goal": getattr(profile, "learning_goal", None) if profile else None,
+            "knowledge_level": getattr(profile, "knowledge_level", None) if profile else None,
+        },
         "profile_updated": profile_updated,
-    }
+    })

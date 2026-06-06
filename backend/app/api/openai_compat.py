@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from app.api.auth import get_current_user_optional
+from app.api.auth import get_current_user
 from app.core.database import get_session
 from app.models.course import Course
 from app.models.user import User
@@ -91,7 +91,7 @@ def _build_response_content(
 
     # Agent trace summary
     if agent_trace:
-        agents = [t.get("agent", "?") for t in agent_trace]
+        agents = [t.get("agent_name") or t.get("agent") or "?" for t in agent_trace]
         parts.append(f"---")
         parts.append(f"**Agent 协作链路**: {' → '.join(agents)}")
 
@@ -142,7 +142,7 @@ def api_list_models():
 @router.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 def api_chat_completions(
     body: ChatCompletionRequest,
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """OpenAI-compatible chat completion endpoint.
@@ -176,8 +176,8 @@ def api_chat_completions(
         user=user,
     )
 
-    verified_answer = result.get("verified_answer", "")
-    agent_trace = result.get("agent_trace", [])
+    answer_text = result.get("answer", "") or result.get("verified_answer", "")
+    agent_trace = result.get("agent_traces", []) or result.get("agent_trace", [])
     student_profile = result.get("student_profile", {})
     citations = result.get("citations", [])
 
@@ -210,7 +210,7 @@ def api_chat_completions(
 
     # Build response
     content = _build_response_content(
-        verified_answer, agent_trace, student_profile, citations, resource_items
+        answer_text, agent_trace, student_profile, citations, resource_items
     )
 
     completion_tokens = len(content) // 2  # rough estimate

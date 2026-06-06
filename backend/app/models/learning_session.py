@@ -19,7 +19,7 @@ class LearningSession(SQLModel, table=True):
     status: str = Field(default="active", index=True)
     last_message_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
     message_count: int = Field(default=0)
-    metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    session_metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -31,5 +31,5 @@ class ChatMessage(SQLModel, table=True):
     session_id: int = Field(foreign_key="learning_sessions.id", index=True)
     role: str = Field(index=True)
     content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    message_metadata: Dict[str, Any] = Field(default_factory=dict, sa_column=Column("metadata", JSON))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)

@@ -1,5 +1,7 @@
 """Course routes: create, list, upload files, list files, list chunks."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sqlmodel import Session, select
 
@@ -23,6 +25,9 @@ from app.services.file_storage import (
     save_upload_file,
     validate_file_type,
 )
+from app.services.rag_service import build_course_index
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -113,12 +118,22 @@ def upload_course_file(course_id: int, file: UploadFile, user: User = Depends(ge
     session.commit()
     session.refresh(cf)
 
+    indexed_chunks = 0
+    if chunk_count > 0 and cf.status == "parsed":
+        try:
+            index_result = build_course_index(course_id, session)
+            if "error" not in index_result:
+                indexed_chunks = int(index_result.get("indexed_chunks", 0) or 0)
+        except Exception as exc:
+            logger.warning("Auto Chroma index build failed for course %s: %s", course_id, exc)
+
     return CourseFileUploadResponse(
         file_id=cf.id,
         course_id=cf.course_id,
         filename=cf.original_filename,
         status=cf.status,
         chunks=chunk_count,
+        indexed_chunks=indexed_chunks,
     )
 
 

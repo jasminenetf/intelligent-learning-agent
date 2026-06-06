@@ -215,5 +215,7 @@ window.DEMO_PAYLOAD = {
     { title: "可信答案校验", description: "检查回答是否有课程资料依据", status: "completed" },
     { title: "学习资源生成", description: "生成知识结构、测验和学习路径", status: "completed" },
     { title: "学习路径规划", description: "根据你的薄弱点规划学习顺序", status: "completed" }
-  ]
+  ],
+
+  mermaidDiagram: "mindmap\n  root((过拟合与正则化))\n    过拟合\n      训练误差低测试误差高\n      模型复杂度过高\n    欠拟合\n      训练测试误差都高\n    正则化\n      L1 Lasso\n      L2 Ridge\n      Dropout\n      早停法"
 };

@@ -635,6 +635,65 @@ def _generate_mindmap_json(
     return MindMapJSON(title=topic, nodes=nodes)
 
 
+# ── Reading / video script generation ──────────────────────────────────────────
+
+def _generate_reading_content(topic: str, chunks: list[dict], profile: dict | None = None) -> str:
+    """Generate extended reading material from course chunks."""
+    summary = _chunks_to_summary(chunks, max_len=800)
+    goal = (profile or {}).get("learning_goal") or "课程掌握"
+    weak = (profile or {}).get("weak_points") or "[]"
+    sections = [
+        f"# {topic} · 拓展阅读材料",
+        "",
+        "## 学习目标",
+        f"围绕「{topic}」进行背景补充与延伸理解，服务学习目标：{goal}。",
+        "",
+        "## 课程依据摘要",
+        summary or "（暂无课程片段，以下为通用拓展框架）",
+        "",
+        "## 延伸阅读建议",
+        "1. 回顾课程核心定义，并与实际案例建立联系。",
+        "2. 结合课堂讲义与思维导图，形成知识网络。",
+        "3. 针对薄弱点进行定向阅读与例题复盘。",
+        "",
+        "## 推荐学习动作",
+        "- 先阅读讲义建立概念框架",
+        "- 再通过练习题检验理解",
+        "- 最后回看错题本中的相关知识点",
+    ]
+    if weak and weak != "[]":
+        sections.append(f"\n## 结合薄弱点\n建议重点阅读与 `{weak}` 相关的章节与例题。")
+    return "\n".join(sections)
+
+
+def _generate_video_script_content(topic: str, chunks: list[dict], profile: dict | None = None) -> str:
+    """Generate a multi-scene teaching video script."""
+    summary = _chunks_to_summary(chunks, max_len=500)
+    style = (profile or {}).get("cognitive_style") or "conceptual"
+    lines = [
+        f"# {topic} · 教学视频脚本",
+        "",
+        f"**讲解风格**：{'图解示意为主' if style == 'conceptual' else '逻辑推导为主' if style == 'logical' else '例题实操为主'}",
+        "",
+        "## 场景 1 · 引入（0:00-0:45）",
+        f"**画面**：课程标题 + {topic} 关键词卡片",
+        f"**旁白**：这节课我们来理解「{topic}」。先明确它解决什么问题，以及和已学知识的联系。",
+        "",
+        "## 场景 2 · 核心讲解（0:45-2:30）",
+        "**画面**：知识点结构图 + 课程资料片段高亮",
+        f"**旁白**：{summary[:200] or '结合课程资料，从定义、原理和典型应用三个层面展开讲解。'}",
+        "",
+        "## 场景 3 · 例题演示（2:30-3:30）",
+        "**画面**：例题步骤动画",
+        "**旁白**：通过一个典型例题，演示如何应用本节知识解决问题。",
+        "",
+        "## 场景 4 · 总结与练习（3:30-4:00）",
+        "**画面**：总结卡片 + 练习入口",
+        f"**旁白**：总结「{topic}」的关键要点，并引导完成配套练习巩固理解。",
+    ]
+    return "\n".join(lines)
+
+
 # ── Lecture generation ─────────────────────────────────────────────────────────
 
 def _generate_lecture_doc_json(
@@ -959,6 +1018,32 @@ def _generate_single_resource(
             used_rag=(num_chunks > 0),
             used_profile=True,
             fallback_used=not ppt_used_llm,
+            context_chunks=num_chunks,
+        )
+
+    elif rt == ResourceType.READING:
+        content = _generate_reading_content(topic, chunks, student_profile)
+        return ResourceItem(
+            type=ResourceType.READING,
+            title=f"{topic}拓展阅读",
+            content=content,
+            generated_by="template" if is_mock else "deepseek",
+            used_rag=(num_chunks > 0),
+            used_profile=True,
+            fallback_used=is_mock,
+            context_chunks=num_chunks,
+        )
+
+    elif rt == ResourceType.VIDEO_SCRIPT:
+        content = _generate_video_script_content(topic, chunks, student_profile)
+        return ResourceItem(
+            type=ResourceType.VIDEO_SCRIPT,
+            title=f"{topic}教学视频脚本",
+            content=content,
+            generated_by="template" if is_mock else "deepseek",
+            used_rag=(num_chunks > 0),
+            used_profile=True,
+            fallback_used=is_mock,
             context_chunks=num_chunks,
         )
 

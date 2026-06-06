@@ -67,7 +67,7 @@ def list_sessions(
                 "last_message_at": s.last_message_at,
                 "created_at": s.created_at,
                 "updated_at": s.updated_at,
-                "metadata": s.metadata or {},
+                "metadata": s.session_metadata or {},
             }
             for s in sessions
         ],
@@ -85,7 +85,7 @@ def create_session(
         course_id=body.course_id,
         title=body.title,
         topic=body.topic,
-        metadata={},
+        session_metadata={},
     )
     session.add(obj)
     session.commit()
@@ -114,7 +114,7 @@ def get_session_detail(
                 "session_id": m.session_id,
                 "role": m.role,
                 "content": m.content,
-                "metadata": m.metadata or {},
+                "metadata": m.message_metadata or {},
                 "created_at": m.created_at,
             }
             for m in messages
@@ -131,7 +131,11 @@ def update_session(
 ):
     obj = _get_owned_session(session_id, int(user.id), session)
     for field, value in body.model_dump(exclude_unset=True).items():
-        if value is not None:
+        if value is None:
+            continue
+        if field == "metadata":
+            obj.session_metadata = value
+        else:
             setattr(obj, field, value)
     obj.updated_at = datetime.now(timezone.utc)
     session.add(obj)
@@ -152,7 +156,7 @@ def add_session_message(
         session_id=obj.id,
         role=body.role,
         content=body.content,
-        metadata=body.metadata or {},
+        message_metadata=body.metadata or {},
     )
     obj.message_count = (obj.message_count or 0) + 1
     _touch_session(obj)
@@ -208,7 +212,7 @@ def add_message(
         session_id=session_obj.id,
         role=role,
         content=content,
-        metadata=metadata or {},
+        message_metadata=metadata or {},
     )
     session_obj.message_count = (session_obj.message_count or 0) + 1
     session_obj.last_message_at = datetime.now(timezone.utc)
@@ -241,7 +245,7 @@ def _serialize_session(obj: LearningSession) -> Dict[str, Any]:
         "last_message_at": obj.last_message_at,
         "created_at": obj.created_at,
         "updated_at": obj.updated_at,
-        "metadata": obj.metadata or {},
+        "metadata": obj.session_metadata or {},
     }
 
 
@@ -251,6 +255,6 @@ def _serialize_message(obj: ChatMessage) -> Dict[str, Any]:
         "session_id": obj.session_id,
         "role": obj.role,
         "content": obj.content,
-        "metadata": obj.metadata or {},
+        "metadata": obj.message_metadata or {},
         "created_at": obj.created_at,
     }

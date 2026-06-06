@@ -36,7 +36,7 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
         username=body.username,
         email=body.email,
         hashed_password=get_password_hash(body.password),
-        role=body.role,
+        role="student",
     )
     session.add(user)
     session.commit()

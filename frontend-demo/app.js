@@ -9,11 +9,56 @@ const S = {
   courseName: '人工智能导论',
   courses: [],
   sidebarCollapsed: false,
+  resourceJobId: null,
+  resourceJobTrace: [],
+  pendingStudyPlan: null,
+  pendingStudyTopic: '',
+  currentQuiz: null,
+  lastAnswer: '',
+  speechUtterance: null,
+  useStreamAsk: true,
+  demoMode: false,
+  resourceCenterQuery: '',
+  resourceCenterSort: 'newest',
+  llmProvider: '',
+  llmModel: '',
 };
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _parseJsonList(raw){
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  try {
+    const d = JSON.parse(raw);
+    return Array.isArray(d) ? d.map(String) : [];
+  } catch (_) {
+    return String(raw).trim() ? [String(raw)] : [];
+  }
+}
+
+function _stageLabel(stage){
+  const map = {
+    foundation: '基础夯实',
+    consolidating: '基础巩固',
+    practice: '强化练习',
+    review: '错题复盘',
+    advanced: '进阶拓展',
+  };
+  return map[stage] || stage || '基础巩固';
+}
+
+const _ARTIFACT_TAB_MAP = {
+  mindmap: 'mindmap',
+  quiz: 'quiz',
+  lecture_doc: 'lecture',
+  ppt: 'ppt',
+  study_plan: 'study_plan',
+  reading: 'lecture',
+  video_script: 'lecture',
+};
 
 async function api(path, opts={}) {
   const headers = {'Content-Type':'application/json'};
@@ -22,6 +67,89 @@ async function api(path, opts={}) {
   let data = {};
   try { data = await res.json(); } catch (_) {}
   return { ok: res.ok, status: res.status, data };
+}
+
+function unwrapApi(res) {
+  if (!res || res.data == null) return {};
+  const d = res.data;
+  if (d && d.ok === true && d.data !== undefined) return d.data;
+  return d;
+}
+
+async function downloadAuthFile(path, filename) {
+  if (!path) return toast('下载地址无效', 'info');
+  if (!S.token) return toast('请先登录后再下载', 'info');
+  let url = String(path);
+  if (!url.startsWith('http')) {
+    url = S.apiBase.replace(/\/$/, '') + (url.startsWith('/') ? url : '/' + url);
+  }
+  toast('正在下载…', 'info');
+  try {
+    const headers = {};
+    if (S.token) headers.Authorization = 'Bearer ' + S.token;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      toast('下载失败（' + res.status + '）', 'info');
+      return;
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename || 'download.pptx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    toast('下载已开始', 'success');
+  } catch (e) {
+    toast(e.message || '下载失败', 'info');
+  }
+}
+
+function bindSidebarNav() {
+  $$('.nav-item[data-page]').forEach(function(el) {
+    el.addEventListener('click', function() { navTo(el.dataset.page); });
+  });
+}
+
+function _resourceDownloadBtn(resourceId, downloadUrl, filename) {
+  const path = downloadUrl || (resourceId ? '/api/resources/download/' + encodeURIComponent(resourceId) : '');
+  if (!path) return '';
+  const fname = filename || 'download.pptx';
+  return '<button type="button" class="btn btn-sm btn-primary" onclick="downloadAuthFile(' + JSON.stringify(path) + ', ' + JSON.stringify(fname) + ')">下载</button>';
+}
+
+function _buildDemoAskResponse() {
+  const demo = window.DEMO_PAYLOAD;
+  if (!demo) return null;
+  return {
+    answer: demo.answer,
+    citations: (demo.citations || []).map(function(c) {
+      return { source: c.source || c.title || '课程资料', page_number: c.section || null };
+    }),
+    agent_traces: (demo.agentSteps || []).map(function(s) {
+      return { agent_name: s.title, status: s.status || 'completed', message: s.description || '' };
+    }),
+    verifier_score: 0.91,
+    student_profile: { knowledge_level: 'intermediate', learning_goal: '理解过拟合与正则化', weak_points: '["过拟合","正则化"]' },
+    resource_suggestions: (demo.learningReport && demo.learningReport.recommended_resources) || [],
+  };
+}
+
+function _applyDemoAskFallback(typingId, msg, box) {
+  const d = _buildDemoAskResponse();
+  if (!d) return false;
+  _finishAskResponse(document.getElementById(typingId), msg, d, box);
+  toast('已使用演示数据（后端暂不可用）', 'info');
+  return true;
+}
+
+function _showAskError(typingId, detail) {
+  const el = document.getElementById(typingId);
+  if (el) {
+    el.innerHTML = '<div class="error-card" style="margin:0;padding:10px"><div class="err-title">问答失败</div><div class="err-detail">' + esc(detail || '请检查登录与模型配置') + '</div></div>';
+  }
 }
 
 let toastTimer;
@@ -53,11 +181,22 @@ function updateTopbar(){
     u.innerHTML = '<span class="topbar-avatar">' + esc((S.user.username||'?')[0].toUpperCase()) + '</span><span>' + esc(S.user.username||'') + '</span>';
     if (lo) lo.style.display = 'inline-flex';
   } else if (u) {
-    u.innerHTML = '<button class="btn btn-sm btn-primary" onclick="_loginDemo()">演示登录</button>';
+    u.innerHTML = '<button class="btn btn-sm btn-primary" onclick="navTo(\'settings\')">登录 / 配置</button>';
     if (lo) lo.style.display = 'none';
   }
   if (c) c.textContent = S.courseName || '未选择';
-  if (b) { b.className = 'topbar-badge ok'; b.textContent = S.token ? '已登录' : '未登录'; }
+  if (b) {
+    if (S.token) {
+      b.className = 'topbar-badge ok';
+      if (S.llmProvider === 'spark') b.textContent = 'Spark';
+      else if (S.llmProvider === 'deepseek') b.textContent = 'DeepSeek';
+      else if (S.llmProvider === 'mock') b.textContent = 'Mock';
+      else b.textContent = '已登录';
+    } else {
+      b.className = 'topbar-badge';
+      b.textContent = '未登录';
+    }
+  }
   if (sf) sf.innerHTML = S.token ? '<span class="status-dot online"></span> 已登录' : '<span class="status-dot offline"></span> 未登录';
   if (t) t.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
 }
@@ -80,7 +219,7 @@ function navTo(id){
   if (id === 'settings') loadSettings();
   if (id === 'knowledge') loadKnowledgeBase();
   if (id === 'learning-path') loadLearningPath();
-  if (id === 'competition') startCompetitionView();
+  if (id === 'profile') loadProfileCenter();
 }
 
 window._toggleSidebar = function(){
@@ -89,28 +228,16 @@ window._toggleSidebar = function(){
   if (sb) sb.classList.toggle('collapsed', S.sidebarCollapsed);
 };
 
+window._toggleAdvanced = function(){
+  const group = document.getElementById('nav-advanced-group');
+  if (!group) return;
+  const show = group.style.display === 'none' || !group.style.display;
+  group.style.display = show ? 'block' : 'none';
+};
+
 window._loginDemo = async function(){
-  // 尝试用后端演示接口登录；失败则仅显示本地界面。
-  try {
-    const r = await api('/api/app/demo-init', { method: 'POST' });
-    if (r.ok && r.data && r.data.token) {
-      setToken(r.data.token);
-      S.user = r.data.user || { username: 'demo' };
-      if (r.data.course) {
-        S.courseId = r.data.course.id || S.courseId;
-        S.courseName = r.data.course.name || S.courseName;
-      }
-      toast('演示账号已登录', 'success');
-      updateTopbar();
-      loadDashboard();
-      return;
-    }
-  } catch (_) {}
-  S.user = { username: 'demo' };
-  setToken('demo-token');
-  toast('已进入演示模式', 'success');
-  updateTopbar();
-  loadDashboard();
+  navTo('settings');
+  toast('请先登录或完成账户配置', 'info');
 };
 
 window._logout = function(){
@@ -121,23 +248,44 @@ window._logout = function(){
 };
 
 async function bootstrap(){
+  bindSidebarNav();
   updateTopbar();
+  if (window.mermaid && mermaid.initialize) {
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+  }
+  try {
+    const st = await api('/api/settings/status');
+    if (st.ok && st.data) {
+      S.llmProvider = st.data.llm_provider || '';
+      S.llmModel = st.data.llm_model || '';
+    }
+  } catch (_) {}
   try {
     const r = await api('/api/app/bootstrap');
-    if (r.ok && r.data) {
-      if (Array.isArray(r.data.courses)) S.courses = r.data.courses;
-      if (r.data.user && r.data.user.authenticated) {
-        S.user = r.data.user;
+    const payload = unwrapApi(r);
+    if (r.ok && payload) {
+      if (Array.isArray(payload.courses)) S.courses = payload.courses;
+      if (payload.user && payload.user.authenticated) {
+        S.user = payload.user;
       }
-      if (r.data.selected_course) {
-        S.courseId = r.data.selected_course.id || S.courseId;
-        S.courseName = r.data.selected_course.name || S.courseName;
+      if (payload.selected_course) {
+        S.courseId = payload.selected_course.id || S.courseId;
+        S.courseName = payload.selected_course.name || S.courseName;
       }
-      if (r.data.config && r.data.config.deepseek_configured === false) {
-        toast('请先配置模型服务', 'info');
+      if (payload.config && payload.config.llm_configured === false) {
+        toast('请先配置模型服务（需管理员账户）', 'info');
       }
-      navTo(S.token ? 'dashboard' : 'settings');
       updateTopbar();
+      const step = payload.next_step || 'start_learning';
+      if (step === 'configure_key') {
+        navTo('settings');
+      } else if (step === 'login') {
+        navTo('settings');
+      } else if (step === 'create_course') {
+        navTo('courses');
+      } else {
+        navTo('assistant');
+      }
       return;
     }
   } catch (_) {}
@@ -156,7 +304,7 @@ async function loadDashboard(){
       api('/api/analytics/bookmarks'),
       api('/api/sessions')
     ]);
-    const d = dashRes.ok ? (dashRes.data || {}) : {};
+    const d = dashRes.ok ? unwrapApi(dashRes) : {};
     const progressItems = (progressRes.ok && progressRes.data && progressRes.data.items) || [];
     const wrongItems = (wrongRes.ok && wrongRes.data && wrongRes.data.items) || [];
     const bookmarks = (bookmarkRes.ok && bookmarkRes.data && bookmarkRes.data.items) || [];
@@ -164,30 +312,25 @@ async function loadDashboard(){
     const progress = progressItems[0] || {};
     const completedRate = progress.total_lessons ? Math.round((progress.completed_lessons / progress.total_lessons) * 100) : Math.round((progress.completed_rate || 0) * 100);
 
+    const recommended = progress.next_recommendation || '先完成一次提问，系统将自动生成个性化建议。';
+    const activityItems = [];
+    if (sessions.length) activityItems.push({ title: '最近会话', value: sessions[0].title || '学习会话', link: 'assistant' });
+    if (wrongItems.length) activityItems.push({ title: '最近错题', value: wrongItems[0].knowledge_point || wrongItems[0].topic || '待复盘知识点', link: 'wrong-book' });
+    if (bookmarks.length) activityItems.push({ title: '最近收藏', value: bookmarks[0].title || bookmarks[0].resource_id || '收藏资源', link: 'resource-center' });
+
     let h = '';
-    h += '<div class="dashboard-hero card" style="background:linear-gradient(135deg,var(--primary-bg),#fff);border:1px solid #c7d2fe">';
-    h += '<div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start">';
-    h += '<div><div style="font-size:12px;color:var(--primary);font-weight:700;letter-spacing:.04em">学习平台总览</div><h2 style="font-size:24px;margin:6px 0 8px;color:var(--gray-900)">欢迎回来，' + esc((S.user && S.user.username) || '同学') + '</h2><p style="font-size:13px;color:var(--gray-500);max-width:720px">从今天开始，继续学习、复盘错题、查看进度，并生成个性化资源。</p></div>';
-    h += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'assistant\')">💬 继续学习</button><button class="btn btn-secondary" onclick="navTo(\'generator\')">⚡ 生成资源</button><button class="btn btn-outline" onclick="navTo(\'learning-report\')">📊 学习报告</button></div>';
-    h += '</div></div>';
-
+    h += '<div class="card"><div class="card-header"><h3>学习工作台</h3><span class="topbar-badge ok">实时状态</span></div>';
+    h += '<div class="course-card" style="cursor:pointer" onclick="navTo(\'courses\')"><h4>📘 当前课程：' + esc(d.course ? d.course.name : S.courseName) + '</h4><div class="course-meta"><span>' + esc(d.course ? (d.course.description || '暂无课程简介') : '请先创建或选择课程') + '</span></div></div>';
     h += '<div class="grid grid-3" style="margin-top:12px">';
-    h += '<div class="card grid-stat"><div class="val" style="color:var(--primary)">' + esc(S.courseName || '未选择') + '</div><div class="lbl">当前课程</div></div>';
-    h += '<div class="card grid-stat"><div class="val" style="color:var(--success)">' + wrongItems.length + '</div><div class="lbl">待复盘错题</div></div>';
-    h += '<div class="card grid-stat"><div class="val" style="color:var(--warning)">' + bookmarks.length + '</div><div class="lbl">已收藏资源</div></div>';
+    h += '<div class="card grid-stat" onclick="navTo(\'learning-report\')" style="cursor:pointer"><div class="val" style="color:var(--primary)">' + completedRate + '%</div><div class="lbl">课程进度</div></div>';
+    h += '<div class="card grid-stat" onclick="navTo(\'wrong-book\')" style="cursor:pointer"><div class="val" style="color:var(--success)">' + wrongItems.length + '</div><div class="lbl">待复盘错题</div></div>';
+    h += '<div class="card grid-stat" onclick="navTo(\'resource-center\')" style="cursor:pointer"><div class="val" style="color:var(--warning)">' + bookmarks.length + '</div><div class="lbl">已收藏资源</div></div>';
     h += '</div>';
-
     h += '<div class="grid grid-2" style="margin-top:12px">';
-    h += '<div class="card"><div class="card-header"><h3>📈 学习概览</h3><span class="topbar-badge ok">实时更新</span></div>';
-    h += '<div class="lr-summary"><div class="lr-stat"><span class="lr-stat-value">' + completedRate + '%</span><span class="lr-stat-label">课程进度</span></div><div class="lr-stat"><span class="lr-stat-value">' + (progress.next_recommendation ? 1 : 0) + '</span><span class="lr-stat-label">推荐动作</span></div><div class="lr-stat"><span class="lr-stat-value">' + sessions.length + '</span><span class="lr-stat-label">会话数</span></div></div>';
-    h += '<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--gray-500);margin-bottom:6px"><span>课程完成度</span><span>' + completedRate + '%</span></div><div class="gen-progress-bar-wrap"><div class="gen-progress-bar-fill" style="width:' + Math.min(completedRate || 0, 100) + '%"></div></div></div>';
+    h += '<div class="card"><div class="card-header"><h3>今日任务</h3></div><div class="course-card" onclick="navTo(\'assistant\')"><h4>1. 继续最近会话</h4><div class="course-meta"><span>完成一次提问，系统将自动更新学习状态</span></div></div><div class="course-card" onclick="navTo(\'wrong-book\')"><h4>2. 复盘错题</h4><div class="course-meta"><span>优先处理当前薄弱点</span></div></div><div class="course-card" onclick="navTo(\'generator\')"><h4>3. 生成学习资源</h4><div class="course-meta"><span>讲义、导图、题库按需生成</span></div></div></div>';
+    h += '<div class="card"><div class="card-header"><h3>智能推荐</h3></div><div class="course-card"><h4>下一步建议</h4><div class="course-meta"><span>' + esc(recommended) + '</span></div></div>' + (activityItems.length ? '<div style="margin-top:12px">' + activityItems.map(a => '<div class="course-card" style="cursor:pointer" onclick="navTo(\'' + a.link + '\')"><h4>' + esc(a.title) + '</h4><div class="course-meta"><span>' + esc(a.value) + '</span></div></div>').join('') + '</div>' : '<div class="empty-state" style="margin-top:12px"><div class="empty-icon">🧭</div><p>完成一次提问后，系统会自动生成个性化推荐</p></div>') + '</div>';
     h += '</div>';
-    h += '<div class="card"><div class="card-header"><h3>🗂 今日任务</h3></div><div class="course-card" onclick="navTo(\'assistant\')"><h4>1. 继续最近会话</h4></div><div class="course-card" onclick="navTo(\'generator\')"><h4>2. 生成一份资源</h4></div><div class="course-card" onclick="navTo(\'wrong-book\')"><h4>3. 复盘错题</h4></div></div>';
-    h += '<div class="card"><div class="card-header"><h3>💬 近期会话</h3></div>' + (sessions.slice(0,3).map(s => '<div class="course-card"><h4>' + esc(s.title || '学习会话') + '</h4><div class="course-meta"><span>消息 ' + (s.message_count || 0) + '</span></div></div>').join('') || '<div class="empty-state"><div class="empty-icon">💬</div><p>还没有会话</p></div>') + '</div>';
-    h += '<div class="card"><div class="card-header"><h3>📚 当前课程与资源</h3></div><p style="font-size:15px;font-weight:700">' + esc(d.course ? d.course.name : S.courseName) + '</p><p style="font-size:12px;color:var(--gray-500)">' + esc(d.course ? (d.course.description || '') : '') + '</p></div>';
-    h += '<div class="card"><div class="card-header"><h3>⭐ 收藏与提醒</h3></div>' + (bookmarks.slice(0,4).map(b => '<div class="lr-resource-card"><span class="lr-resource-icon">🔖</span><span>' + esc(b.title || b.resource_id) + '</span></div>').join('') || '<div class="empty-state"><div class="empty-icon">🔖</div><p>暂无收藏</p></div>') + '</div>';
-    h += '<div class="card"><div class="card-header"><h3>🧠 学习画像</h3></div><div class="empty-state"><div class="empty-icon">🧠</div><p>画像信息将从后端接口逐步展示</p></div></div>';
-    h += '</div>';
+    h += '<div class="card"><div class="card-header"><h3>最近活动</h3></div>' + (activityItems.length ? activityItems.map(a => '<div class="course-card" style="cursor:pointer" onclick="navTo(\'' + a.link + '\')"><h4>' + esc(a.title) + '</h4><div class="course-meta"><span>' + esc(a.value) + '</span></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🕘</div><p>暂无活动，先去提问或上传资料开始学习</p></div>') + '</div>';
     el.innerHTML = h;
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">首页加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div><div class="err-actions"><button class="btn btn-sm btn-primary" onclick="loadDashboard()">重试</button></div></div>';
@@ -210,6 +353,254 @@ async function refreshSessionList(){
     sel.innerHTML = '<option value="">— 会话加载失败 —</option>';
   }
 }
+
+async function loadAssistant(){
+  await refreshSessionList();
+  _initArtifactTabs();
+  const box = document.getElementById('chat-messages');
+  if (box) {
+    const hasContent = box.querySelector('.msg-bubble, .loading-block, .empty-state, .error-card');
+    if (!hasContent) {
+      box.innerHTML = '<div class="msg-bubble agent"><div class="msg-content">你好，我是智学工坊学习助手。告诉我你正在学什么、哪里不理解，我会结合课程资料解答，并推荐讲义、导图、练习等下一步学习资源。</div></div>';
+    }
+  }
+}
+
+function _initArtifactTabs(){
+  const tabs = document.getElementById('artifacts-tabs');
+  if (!tabs || tabs.dataset.inited) return;
+  tabs.dataset.inited = '1';
+  const items = [
+    ['mindmap', '思维导图'],
+    ['quiz', '练习题'],
+    ['lecture', '讲义'],
+    ['ppt', 'PPT'],
+    ['study_plan', '学习路径'],
+  ];
+  tabs.innerHTML = items.map((x, i) =>
+    '<button type="button" class="artifact-tab' + (i === 0 ? ' active' : '') + '" onclick="_switchArtifactTab(\'' + x[0] + '\', this)">' + esc(x[1]) + '</button>'
+  ).join('');
+  _switchArtifactTab('mindmap', tabs.querySelector('.artifact-tab'));
+}
+
+window._switchArtifactTab = function(panelId, btn){
+  document.querySelectorAll('.artifact-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('#artifacts-content .tab-panel').forEach(p => { p.style.display = 'none'; });
+  const panel = document.getElementById('artifact-' + panelId);
+  if (panel) panel.style.display = 'block';
+};
+
+function _renderAskSidebar(data){
+  const refs = data.citations || [];
+  const citePanel = document.getElementById('citations-panel');
+  if (citePanel) {
+    if (refs.length) {
+      citePanel.innerHTML = '<h4>📚 课程依据</h4>' + refs.map(x => {
+        const label = typeof x === 'string' ? x : (x.source || x.chunk_id || '课程片段');
+        const page = (x && x.page_number) ? ' p.' + x.page_number : '';
+        return '<div class="course-card" style="margin-top:6px"><div class="course-meta"><span>' + esc(String(label) + page) + '</span></div></div>';
+      }).join('');
+    } else {
+      citePanel.innerHTML = '<h4>📚 课程依据</h4><p style="font-size:12px;color:var(--gray-400)">本次回答未检索到课程片段</p>';
+    }
+  }
+  const agentViz = document.getElementById('agent-viz');
+  const traces = data.agent_traces || [];
+  if (agentViz) {
+    const scoreLine = data.verifier_score !== undefined && data.verifier_score !== null
+      ? '<div class="course-meta"><span>校验置信度 ' + Math.round(Number(data.verifier_score) * 100) + '%</span></div>'
+      : '';
+    agentViz.innerHTML = '<h4>🤖 学习助手协作</h4>' + scoreLine + (traces.length
+      ? traces.map(t => '<div class="course-card" style="margin-top:6px"><h4 style="font-size:12px">' + esc(t.agent || t.agent_name || t.name || 'agent') + '</h4><div class="course-meta"><span>' + esc(t.status || '') + '</span><span>' + esc(t.message || t.summary || '') + '</span></div></div>').join('')
+      : '<p style="font-size:11px;color:var(--gray-400)">协作轨迹将在问答后显示</p>');
+  }
+  const profileMini = document.getElementById('profile-mini');
+  const sp = data.student_profile || {};
+  if (profileMini && (sp.knowledge_level || sp.learning_goal)) {
+    profileMini.innerHTML = '<h4>🎓 学习画像</h4><div class="course-meta"><span>基础 ' + esc(sp.knowledge_level || '—') + '</span><span>目标 ' + esc(sp.learning_goal || '—') + '</span></div><button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="navTo(\'profile\')">查看画像中心</button>';
+  }
+}
+
+function _renderResourceSuggestions(suggestions, question){
+  if (!suggestions || !suggestions.length) return '';
+  const topic = JSON.stringify(question || '');
+  return '<div class="msg-suggestions" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--gray-200)">' +
+    '<div style="font-size:11px;color:var(--gray-500);margin-bottom:6px">推荐下一步资源</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    suggestions.map(s =>
+      '<button type="button" class="btn btn-sm btn-outline" onclick="loadArtifactPreview(' + JSON.stringify(s.type) + ', ' + topic + ')" title="' + esc(s.reason || '') + '">⚡ ' + esc(s.title || s.type) + '</button>'
+    ).join('') +
+    '</div></div>';
+}
+
+function _activateArtifactTab(type){
+  const tabId = _ARTIFACT_TAB_MAP[type] || type;
+  const tabs = document.getElementById('artifacts-tabs');
+  let btn = null;
+  if (tabs) {
+    tabs.querySelectorAll('.artifact-tab').forEach(function(b){
+      const oc = b.getAttribute('onclick') || '';
+      if (oc.indexOf("'" + tabId + "'") >= 0) btn = b;
+    });
+  }
+  _switchArtifactTab(tabId, btn);
+}
+
+function _renderMermaidPanel(el, code, title){
+  if (!el) return;
+  el.innerHTML = '<div class="course-card"><h4>' + esc(title || '知识结构图') + '</h4></div><div id="mermaid-host"></div>';
+  const host = document.getElementById('mermaid-host');
+  if (!host) return;
+  const node = document.createElement('div');
+  node.className = 'mermaid';
+  node.textContent = code || 'graph TD\n  A[暂无导图]';
+  host.appendChild(node);
+  if (window.mermaid && mermaid.run) {
+    mermaid.run({ nodes: [node] }).catch(function(){});
+  }
+}
+
+function _renderQuizPanel(el, items, topic){
+  if (!el) return;
+  const quizItems = Array.isArray(items) ? items : [];
+  if (!quizItems.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>暂无练习题</p></div>';
+    return;
+  }
+  S.currentQuiz = { topic: topic || '', items: quizItems };
+  el.innerHTML = quizItems.map((it, idx) => {
+    const opts = (it.options || []).map((o, oi) =>
+      '<label style="display:block;margin:4px 0"><input type="radio" name="quiz-' + idx + '" value="' + oi + '"> ' + esc(o) + '</label>'
+    ).join('');
+    return '<div class="course-card" data-quiz-idx="' + idx + '"><h4>Q' + (idx + 1) + '. ' + esc(it.question || '') + '</h4>' + opts +
+      '<button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="submitQuizAnswer(' + idx + ')">提交本题</button></div>';
+  }).join('');
+}
+
+async function submitQuizAnswer(idx){
+  const quiz = S.currentQuiz;
+  if (!quiz || !quiz.items || !quiz.items[idx]) return toast('题目不存在', 'info');
+  const item = quiz.items[idx];
+  const picked = document.querySelector('input[name="quiz-' + idx + '"]:checked');
+  if (!picked) return toast('请先选择答案', 'info');
+  const selectedIdx = Number(picked.value);
+  const isCorrect = selectedIdx === Number(item.answer);
+  const selectedText = (item.options || [])[selectedIdx] || String(selectedIdx);
+  const correctText = (item.options || [])[Number(item.answer)] || String(item.answer);
+  try {
+    const r = await api('/api/app/quiz/submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        course_id: S.courseId,
+        topic: quiz.topic,
+        question_text: item.question || '',
+        selected_answer: selectedText,
+        correct_answer: correctText,
+        is_correct: isCorrect,
+        knowledge_point: quiz.topic,
+        explanation: item.explanation || '',
+      }),
+    });
+    if (r.ok) {
+      toast(isCorrect ? '回答正确，画像已更新' : '已记录错题，建议生成复习资源', isCorrect ? 'success' : 'info');
+      if (!isCorrect) navTo('wrong-book');
+      return;
+    }
+    toast('作答记录失败', 'info');
+  } catch (e) {
+    toast(e.message || '作答记录失败', 'info');
+  }
+}
+
+async function loadArtifactPreview(type, topic){
+  const assistantPage = document.getElementById('page-assistant');
+  if (!assistantPage || !assistantPage.classList.contains('active')) {
+    navTo('assistant');
+    await new Promise(function(resolve){ setTimeout(resolve, 120); });
+  }
+  const tabId = _ARTIFACT_TAB_MAP[type] || type;
+  const panel = document.getElementById('artifact-' + tabId);
+  if (!panel) {
+    navTo('generator');
+    setTimeout(function(){ quickGenerateFromChat(type, topic); }, 80);
+    return;
+  }
+  _initArtifactTabs();
+  _activateArtifactTab(type);
+  panel.innerHTML = '<div class="loading-block"><span class="spinner"></span> 正在生成' + esc(type) + '...</div>';
+  if (type === 'study_plan') {
+    S.pendingStudyTopic = topic || '';
+    navTo('learning-path');
+    return;
+  }
+  try {
+    const r = await api('/api/app/generate', {
+      method: 'POST',
+      body: JSON.stringify({ course_id: S.courseId, resource_type: type, topic: topic || '当前学习主题' }),
+    });
+    const d = r.ok ? unwrapApi(r) : {};
+    if (!r.ok) {
+      panel.innerHTML = '<div class="error-card"><div class="err-title">生成失败</div><div class="err-detail">' + esc((r.data && r.data.detail) || (r.data && r.data.message) || '请求失败') + '</div></div>';
+      toast('资源生成失败', 'info');
+      return;
+    }
+    if (type === 'mindmap') {
+      _renderMermaidPanel(panel, d.mermaid || d.content || '', d.title);
+    } else if (type === 'quiz') {
+      let items = d.items;
+      if (!items && d.content) {
+        try { const parsed = JSON.parse(d.content); items = parsed.items || parsed; } catch (_) {}
+      }
+      _renderQuizPanel(panel, items, topic);
+    } else if (type === 'ppt' && d.download_url) {
+      panel.innerHTML = '<div class="course-card"><h4>' + esc(d.title || 'PPT课件') + '</h4><div class="course-meta"><span>共 ' + esc(String(d.slide_count || '?')) + ' 页</span></div>' + _resourceDownloadBtn(null, d.download_url, (d.title || '课件') + '.pptx') + '</div>';
+    } else {
+      panel.innerHTML = '<div class="course-card"><h4>' + esc(d.title || type) + '</h4><div style="white-space:pre-wrap;font-size:13px;line-height:1.6;margin-top:8px">' + esc(d.content || '内容生成完成') + '</div></div>';
+    }
+    toast('资源已加载到预览区', 'success');
+  } catch (e) {
+    if (S.demoMode && window.DEMO_PAYLOAD) {
+      const demo = window.DEMO_PAYLOAD;
+      if (type === 'mindmap' && demo.mermaidDiagram) {
+        _renderMermaidPanel(panel, demo.mermaidDiagram, demo.mindmap ? demo.mindmap.title : topic);
+        toast('已加载演示思维导图', 'success');
+        return;
+      }
+      if (type === 'quiz' && demo.quiz) {
+        _renderQuizPanel(panel, demo.quiz, topic);
+        toast('已加载演示测验', 'success');
+        return;
+      }
+    }
+    panel.innerHTML = '<div class="error-card"><div class="err-title">生成失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+window.quickGenerateFromChat = function(type, topic){
+  if (['mindmap', 'quiz', 'lecture_doc', 'ppt', 'reading', 'video_script'].includes(type)) {
+    const assistantPage = document.getElementById('page-assistant');
+    if (assistantPage && assistantPage.classList.contains('active')) {
+      loadArtifactPreview(type, topic);
+      return;
+    }
+  }
+  if (type === 'study_plan') {
+    S.pendingStudyTopic = topic || '';
+    navTo('learning-path');
+    return;
+  }
+  navTo('generator');
+  setTimeout(function(){
+    const topicEl = document.getElementById('resource-topic');
+    if (topicEl && topic) topicEl.value = topic;
+    document.querySelectorAll('.resource-type-cb').forEach(function(cb){
+      cb.checked = (cb.value === type);
+    });
+    if (topic) generateResources();
+    else toast('已切换到资源生成，请填写主题后生成', 'info');
+  }, 80);
+};
 
 async function onSessionSelect(value){
   if (!value) return;
@@ -243,200 +634,254 @@ async function createNewSession(){
       try {
         await api('/api/analytics/audit', {
           method: 'POST',
-          body: JSON.stringify({ action: 'session_create', target_type: 'session', target_id: String(r.data.session.id), detail: r.data.session.title || '新的学习会话' })
+          body: JSON.stringify({ action: 'session_create', target_type: 'session', target_id: String(r.data.session.id), detail: r.data.session.title || '' })
         });
       } catch (_) {}
-      if (box) box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>新的学习会话已创建</p></div>';
-      if (sel) sel.value = String(r.data.session.id);
-      toast('新会话已创建', 'success');
-      await refreshSessionList();
+      toast('会话已创建', 'success');
+      if (sel) await refreshSessionList();
+      if (box) box.innerHTML = '<div class="msg-bubble agent"><div class="msg-content">新会话已创建，可以开始提问。</div></div>';
       return;
     }
-  } catch (_) {}
-  if (box) box.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>新的学习会话已准备好</p></div>';
-  if (sel) sel.value = '';
-  toast('新会话已准备好', 'info');
+    toast('创建会话失败', 'info');
+  } catch (e) {
+    toast(e.message || '创建会话失败', 'info');
+  }
 }
 
-function _startCompetition(){
-  const landing = document.getElementById('competition-landing');
-  const flow = document.getElementById('competition-flow');
-  if (landing) landing.style.display = 'none';
-  if (flow) flow.style.display = 'grid';
-  toast('已进入 AI 学习演示流程', 'success');
-  _runCompetitionDemo();
+function _getSelectedResourceTypes(){
+  return Array.from(document.querySelectorAll('.resource-type-cb:checked')).map(el => el.value);
 }
 
-async function _runCompetitionDemo(){
-  const chat = document.getElementById('comp-chat-messages');
-  const citations = document.getElementById('comp-citations');
-  const profile = document.getElementById('comp-profile-text');
-  const trace = document.getElementById('comp-agent-trace-content');
-  const progress = document.getElementById('comp-progress');
-  const progressText = document.getElementById('comp-progress-text');
-  const tabs = document.getElementById('comp-workspace-tabs');
-  const wsEmpty = document.getElementById('comp-ws-empty');
+function renderResourceTrace(trace){
+  const el = document.getElementById('resource-trace-list');
+  if (!el) return;
+  if (!trace || !trace.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🧭</div><p>等待生成任务</p></div>';
+    return;
+  }
+  el.innerHTML = trace.map(t => {
+    const ok = t.status === 'completed';
+    return '<div class="course-card"><h4>' + esc(t.agent || t.agent_name || 'agent') + '</h4><div class="course-meta"><span>' + esc(t.status || '') + '</span><span>' + esc(t.message || '') + '</span></div></div>';
+  }).join('');
+}
 
-  if (chat) chat.innerHTML = '<div class="comp-empty-state"><div class="empty-icon">🤖</div><p>正在准备演示数据...</p></div>';
-  if (progress) progress.style.display = 'inline-flex';
-  if (progressText) progressText.textContent = '0%';
+function renderResourceJobResults(resources){
+  const el = document.getElementById('resource-result-list');
+  if (!el) return;
+  if (!resources || !resources.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>暂无生成结果</p></div>';
+    return;
+  }
+  el.innerHTML = resources.map(r => {
+    const fname = (r.title || r.type || '资源') + (String(r.type || '').includes('ppt') ? '.pptx' : '');
+    return '<div class="course-card"><h4>' + esc(r.title || r.type || '资源') + '</h4><div class="course-meta"><span>' + esc(r.type || '') + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+      _resourceDownloadBtn(r.resource_id, r.download_url, fname) +
+      '<button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">去资源中心</button></div></div>';
+  }).join('');
+}
 
-  try {
-    const r = await api('/api/app/demo-init', { method: 'POST' });
-    if (r.ok && r.data) {
-      if (r.data.token) setToken(r.data.token);
-      if (r.data.user) S.user = r.data.user;
-      if (r.data.course) {
-        S.courseId = r.data.course.id || S.courseId;
-        S.courseName = r.data.course.name || S.courseName;
+async function pollResourceJob(jobId){
+  if (!jobId) return;
+  const maxTries = 40;
+  let tries = 0;
+  const timer = setInterval(async () => {
+    tries += 1;
+    try {
+      const r = await api('/api/resources/generate/' + encodeURIComponent(jobId));
+      if (!r.ok || !r.data) return;
+      const d = unwrapApi(r);
+      S.resourceJobTrace = d.agent_trace || [];
+      renderResourceTrace(S.resourceJobTrace);
+      if (d.status === 'completed') {
+        clearInterval(timer);
+        const result = d.result || {};
+        renderResourceJobResults(result.resources || []);
+        toast('资源生成完成', 'success');
+        return;
       }
-      updateTopbar();
-      if (chat) chat.innerHTML = [
-        '<div class="msg-bubble user"><div class="msg-content">什么是过拟合，怎么在学习中避免？</div></div>',
-        '<div class="msg-bubble agent"><div class="msg-content">我会先检索课程资料，再给出带引用的解释，并生成可复习的学习成果。</div></div>'
-      ].join('');
-      if (citations) citations.innerHTML = '<h4>📚 课程依据</h4><p style="font-size:12px;color:var(--gray-400)">答案来自课程资料检索与校验</p>';
-      if (profile) profile.textContent = '偏好：思维导图 / 练习题；基础：待分析；当前课程：' + esc(S.courseName || '未选择');
-      if (trace) trace.innerHTML = '<p style="font-size:11px">1. 资料检索完成</p><p style="font-size:11px">2. 学习画像更新</p><p style="font-size:11px">3. 答案生成与校验完成</p>';
-      if (progressText) progressText.textContent = '80%';
-      if (wsEmpty) wsEmpty.style.display = 'none';
-      if (tabs) tabs.classList.add('active');
-      navTo('dashboard');
-      toast('演示流程已准备好', 'success');
-    }
-  } catch (e) {
-    toast('演示流程启动失败，请稍后重试', 'info');
-  }
+      if (d.status === 'failed') {
+        clearInterval(timer);
+        toast(d.error_message || '资源生成失败', 'info');
+      }
+    } catch (_) {}
+    if (tries >= maxTries) clearInterval(timer);
+  }, 1200);
 }
 
-function _toggleAdvanced(){
-  const group = document.getElementById('nav-advanced-group');
-  const title = document.querySelector('#nav-advanced-toggle span:last-child');
-  if (!group) return;
-  const show = group.style.display === 'none' || !group.style.display;
-  group.style.display = show ? 'block' : 'none';
-  if (title) title.textContent = show ? '▴' : '▾';
-}
-
-async function loadKnowledgeBase(){
-  const el = document.getElementById('page-knowledge');
-  if (!el) return;
-  el.innerHTML = '<div class="card"><div class="card-header"><h3>课程资料库</h3><button class="btn btn-sm btn-outline" onclick="loadKnowledgeBase()">🔄 刷新</button></div><div class="loading-block"><span class="spinner"></span> 正在加载课程资料...</div></div>';
+async function generateResources(){
+  const topicEl = document.getElementById('resource-topic');
+  const topic = topicEl ? topicEl.value.trim() : '';
+  if (!topic) return toast('请输入学习主题', 'info');
+  const types = _getSelectedResourceTypes();
+  if (!types.length) return toast('请至少选择一种资源类型', 'info');
+  const goalEl = document.getElementById('resource-goal');
+  const diffEl = document.getElementById('resource-difficulty');
+  renderResourceTrace([{ agent: 'init', status: 'running', message: '正在启动多智能体资源生成...' }]);
   try {
-    const r = await api('/api/app/bootstrap');
-    const courses = (r.ok && r.data && Array.isArray(r.data.courses)) ? r.data.courses : [];
-    const current = courses.find(c => String(c.id) === String(S.courseId)) || courses[0] || null;
-    const courseName = current ? current.name : S.courseName;
-    const courseDesc = current ? (current.description || '暂无描述') : '暂无课程资料';
-    const chunks = current ? (current.chunks_count || 0) : 0;
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>课程资料库</h3><button class="btn btn-sm btn-outline" onclick="loadKnowledgeBase()">🔄 刷新</button></div><div class="course-card"><h4>📘 ' + esc(courseName) + '</h4><div class="course-meta"><span>' + esc(courseDesc) + '</span><span>资料块 ' + chunks + '</span></div></div><div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'assistant\')">去提问</button><button class="btn btn-outline" onclick="navTo(\'courses\')">切换课程</button><button class="btn btn-outline" onclick="navTo(\'resource-center\')">查看资源</button></div><div style="margin-top:12px" class="empty-state"><div class="empty-icon">🧠</div><p>' + (chunks > 0 ? '知识库已接入，可继续提问获取引用答案' : '当前课程暂无知识库，建议先导入课程资料') + '</p></div></div>';
-  } catch (e) {
-    el.innerHTML = '<div class="error-card"><div class="err-title">课程资料库加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
-  }
-}
-
-async function loadLearningPath(){
-  const el = document.getElementById('page-learning-path');
-  if (!el) return;
-  el.innerHTML = '<div class="card"><div class="card-header"><h3>学习计划</h3><button class="btn btn-sm btn-outline" onclick="loadLearningPath()">🔄 刷新</button></div><div class="loading-block"><span class="spinner"></span> 正在生成学习计划...</div></div>';
-  try {
-    const r = await api('/api/analytics/progress');
-    const progress = (r.ok && r.data.items && r.data.items[0]) || {};
-    const weakPoints = Array.isArray(progress.weak_points) ? progress.weak_points : [];
-    const steps = [
-      '先完成一次提问，确认当前知识点理解情况',
-      '进入资源中心，下载或收藏相关资料',
-      '完成一轮测验，记录错题',
-      '在错题本中追问并加入复习计划',
-      '回到学习报告查看完成率与薄弱点'
-    ];
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习计划</h3><button class="btn btn-sm btn-outline" onclick="loadLearningPath()">🔄 刷新</button></div><div class="course-card"><h4>🗺️ 当前学习建议</h4><div class="course-meta"><span>' + esc(progress.next_recommendation || '暂无个性化推荐，先完成一次问答或测验') + '</span></div></div><div style="margin-top:12px">' + steps.map((s, i) => '<div class="course-card"><h4>' + (i + 1) + '. ' + esc(s) + '</h4></div>').join('') + '</div>' + (weakPoints.length ? '<div style="margin-top:12px" class="lr-section"><div class="lr-section-title">薄弱知识点</div><div class="lr-chips">' + weakPoints.map(w => '<span class="lr-chip">' + esc(w) + '</span>').join('') + '</div></div>' : '<div class="empty-state" style="margin-top:12px"><div class="empty-icon">🗺️</div><p>还没有足够的学习数据生成个性化计划</p></div>') + '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'assistant\')">开始学习</button><button class="btn btn-outline" onclick="navTo(\'wrong-book\')">复盘错题</button><button class="btn btn-outline" onclick="navTo(\'learning-report\')">查看报告</button></div></div>';
-  } catch (e) {
-    el.innerHTML = '<div class="error-card"><div class="err-title">学习计划加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
-  }
-}
-
-function loadAssistant(){
-  const el = document.getElementById('page-assistant');
-  if (!el) return;
-  el.innerHTML = '<div class="assistant-layout"><div class="chat-panel"><div class="session-bar"><select id="session-select" onchange="onSessionSelect(this.value)"><option value="">— 选择历史会话 —</option></select><button type="button" class="btn btn-sm btn-outline" onclick="createNewSession()">+ 新会话</button></div><div class="chat-messages" id="chat-messages"><div class="empty-state"><div class="empty-icon">💬</div><p>在这里发起提问</p></div></div><div class="chat-input-area"><div class="chat-input-row"><textarea id="chat-input" placeholder="输入你想学习的问题，例如：过拟合和正则化有什么关系？" rows="2"></textarea><button class="btn btn-primary" onclick="sendQuestion()">发送</button></div></div></div><div class="artifacts-panel"><div class="artifacts-tabs"><div class="artifacts-tab active">答案与引用</div></div><div class="artifacts-content"><div class="tab-panel active"><div class="empty-state"><div class="empty-icon">📖</div><p>提问后显示答案、引用、思维导图与测验</p></div></div></div></div><div class="citations-panel"><h4>课程依据</h4><p style="font-size:12px;color:var(--gray-400)">提问后显示引用来源</p></div></div>';
-  refreshSessionList();
-}
-
-async function loadCourses(){
-  const el = document.getElementById('page-courses');
-  if (!el) return;
-  el.innerHTML = '<div class="card"><div class="card-header"><h3>课程中心</h3></div><div class="loading-block"><span class="spinner"></span> 加载课程中...</div></div>';
-  try {
-    const r = await api('/api/app/bootstrap');
-    const courses = (r.ok && r.data && Array.isArray(r.data.courses)) ? r.data.courses : S.courses;
-    if (Array.isArray(courses)) S.courses = courses;
-    if (!courses || !courses.length) {
-      el.innerHTML = '<div class="card"><div class="card-header"><h3>课程中心</h3></div><div class="empty-state"><div class="empty-icon">📚</div><p>暂无课程</p><p style="font-size:11px;color:var(--gray-400)">后端课程列表加载后会展示在这里</p></div></div>';
+    const r = await api('/api/resources/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        course_id: S.courseId,
+        topic,
+        resource_types: types,
+        difficulty: diffEl ? diffEl.value : 'auto',
+        goal: goalEl ? goalEl.value.trim() : '',
+      }),
+    });
+    const payload = unwrapApi(r);
+    if (r.ok && payload) {
+      S.resourceJobId = payload.job_id;
+      S.resourceJobTrace = payload.agent_trace || [];
+      renderResourceTrace(S.resourceJobTrace);
+      if (payload.resources && payload.resources.length) {
+        renderResourceJobResults(payload.resources);
+        toast('资源生成完成', 'success');
+        return;
+      }
+      if (payload.job_id && payload.status === 'running') {
+        pollResourceJob(payload.job_id);
+        return;
+      }
+      toast('资源生成完成', 'success');
       return;
     }
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>课程中心</h3><button class="btn btn-sm btn-outline" onclick="loadCourses()">🔄 刷新</button></div>' + courses.map(c => '<div class="course-card'+((c.id===S.courseId)?' selected':'')+'" onclick="S.courseId='+c.id+';S.courseName=\''+esc(c.name||'')+'\';updateTopbar();loadDashboard();loadCourses();"><h4>📘 '+esc(c.name||'未命名课程')+'</h4><div class="course-meta"><span>'+esc(c.description||'暂无描述')+'</span></div></div>').join('') + '</div>';
+    toast((r.data && r.data.error) || '资源生成失败', 'info');
   } catch (e) {
-    el.innerHTML = '<div class="error-card"><div class="err-title">课程中心加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+    toast(e.message || '资源生成失败', 'info');
   }
 }
 
-function loadGenerator(){
+async function loadGenerator(){
   const el = document.getElementById('page-generator');
   if (!el) return;
-  el.innerHTML = '<div class="card"><div class="card-header"><h3>资源生成中心</h3><button class="btn btn-sm btn-outline" onclick="loadGenerator()">🔄 刷新</button></div><div class="grid grid-2"><div class="course-card" onclick="navTo(\'assistant\')"><h4>🧠 思维导图</h4><div class="course-meta"><span>进入会话中心，围绕问题生成知识结构</span></div></div><div class="course-card" onclick="navTo(\'assistant\')"><h4>📄 讲义文档</h4><div class="course-meta"><span>进入会话中心，生成课程讲解文本</span></div></div><div class="course-card" onclick="navTo(\'assistant\')"><h4>📝 测验题库</h4><div class="course-meta"><span>进入会话中心，生成练习与错题复盘</span></div></div><div class="course-card" onclick="navTo(\'assistant\')"><h4>📊 PPT 课件</h4><div class="course-meta"><span>进入会话中心，生成可下载演示课件</span></div></div></div><div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'assistant\')">从问题生成资源</button><button class="btn btn-outline" onclick="navTo(\'resource-center\')">查看已生成资源</button></div></div>';
+  el.innerHTML = '<div class="grid grid-2">' +
+    '<div class="card"><div class="card-header"><h3>多智能体资源生成</h3></div>' +
+    '<div class="form-group"><label>当前课程</label><input readonly value="' + esc(S.courseName || '') + '"></div>' +
+    '<div class="form-group"><label>学习主题</label><input id="resource-topic" class="input" placeholder="例如：过拟合与正则化"></div>' +
+    '<div class="form-group"><label>学习目标</label><input id="resource-goal" class="input" placeholder="例如：期末复习 / 考研强化"></div>' +
+    '<div class="form-group"><label>难度</label><select id="resource-difficulty" class="input"><option value="auto">自动</option><option value="easy">简单</option><option value="medium">中等</option><option value="hard">困难</option></select></div>' +
+    '<div class="form-group"><label>资源类型</label><div class="resource-type-grid">' +
+      ['lecture_doc:讲义','mindmap:思维导图','quiz:题库','ppt:PPT','reading:拓展阅读','video_script:视频脚本'].map(x => {
+        const p = x.split(':');
+        return '<label><input class="resource-type-cb" type="checkbox" value="' + p[0] + '"' + (['lecture_doc','mindmap','quiz'].includes(p[0]) ? ' checked' : '') + '> ' + esc(p[1]) + '</label>';
+      }).join('') +
+    '</div></div>' +
+    '<button class="btn btn-primary" onclick="generateResources()">开始生成</button>' +
+    '<p style="font-size:11px;color:var(--gray-400);margin-top:8px">系统将按 Planner → Retriever → Generator → Verifier 协作生成个性化资源包。</p></div>' +
+    '<div class="card"><div class="card-header"><h3>生成过程</h3></div><div id="resource-trace-list" class="trace-list"><div class="empty-state"><div class="empty-icon">🧭</div><p>等待生成任务</p></div></div></div></div>' +
+    '<div class="card" style="margin-top:12px"><div class="card-header"><h3>生成结果</h3><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">去资源中心</button></div><div id="resource-result-list"></div></div>';
 }
 
-async function bookmarkResource(resourceId, title){
-  try {
-    const r = await api('/api/analytics/bookmarks', {
-      method: 'POST',
-      body: JSON.stringify({ resource_id: resourceId, title: title || '' })
-    });
-    if (r.ok) {
-      try {
-        await api('/api/analytics/audit', {
-          method: 'POST',
-          body: JSON.stringify({ action: 'bookmark_create', target_type: 'resource', target_id: String(resourceId), detail: title || '' })
-        });
-      } catch (_) {}
-      toast('已收藏资源', 'success');
-      return true;
-    }
-  } catch (_) {}
-  toast('收藏暂时失败，请稍后重试', 'info');
-  return false;
+function _resourceStats(files, bookmarks){
+  const totalSize = files.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+  return '<div class="grid grid-3" style="margin-bottom:12px"><div class="card grid-stat"><div class="val" style="color:var(--primary)">' + files.length + '</div><div class="lbl">资源数量</div></div><div class="card grid-stat"><div class="val" style="color:var(--success)">' + Math.round(totalSize / 1024) + 'KB</div><div class="lbl">资源总大小</div></div><div class="card grid-stat"><div class="val" style="color:var(--warning)">' + bookmarks.length + '</div><div class="lbl">收藏数量</div></div></div>';
 }
 
-async function shareResource(resourceId, title){
-  const url = S.apiBase.replace(/\/$/,'') + '/api/resources/download/' + encodeURIComponent(resourceId);
-  const text = title ? (title + '：' + url) : url;
-  try {
-    await api('/api/analytics/audit', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'resource_share', target_type: 'resource', target_id: String(resourceId), detail: title || '' })
-    });
-  } catch (_) {}
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(function(){ toast('分享链接已复制', 'success'); }).catch(function(){ toast('无法复制链接，请手动复制', 'info'); });
-  } else {
-    toast('分享链接：' + url, 'info');
+function _resourceToolbar(filter, query, sort){
+  const tabs = [
+    { id: 'all', label: '全部' },
+    { id: 'file', label: '文件' },
+    { id: 'bookmark', label: '收藏' },
+    { id: 'session', label: '会话' }
+  ];
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">' +
+    '<input id="resource-search" class="input" style="min-width:220px;max-width:320px;flex:1" placeholder="搜索资源名称、类型或状态" value="' + esc(query || '') + '" onkeydown="if(event.key===\'Enter\'){loadResourceCenter(\'' + filter + '\', this.value, document.getElementById(\'resource-sort\') ? document.getElementById(\'resource-sort\').value : \'newest\')}" />' +
+    '<select id="resource-sort" class="input" style="min-width:160px;max-width:220px" onchange="loadResourceCenter(\'' + filter + '\', document.getElementById(\'resource-search\') ? document.getElementById(\'resource-search\').value : \'\', this.value)">' +
+      '<option value="newest"' + (sort === 'newest' ? ' selected' : '') + '>按最新</option>' +
+      '<option value="oldest"' + (sort === 'oldest' ? ' selected' : '') + '>按最早</option>' +
+      '<option value="name"' + (sort === 'name' ? ' selected' : '') + '>按名称</option>' +
+      '<option value="size"' + (sort === 'size' ? ' selected' : '') + '>按大小</option>' +
+    '</select>' +
+    tabs.map(t => '<button class="btn btn-sm ' + (filter === t.id ? 'btn-primary' : 'btn-outline') + '" onclick="loadResourceCenter(\'' + t.id + '\', document.getElementById(\'resource-search\') ? document.getElementById(\'resource-search\').value : \'\', document.getElementById(\'resource-sort\') ? document.getElementById(\'resource-sort\').value : \'newest\')">' + esc(t.label) + '</button>').join('') +
+  '</div>';
+}
+
+function _resourceTags(){
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><span class="lr-chip">讲义</span><span class="lr-chip">思维导图</span><span class="lr-chip">练习题</span><span class="lr-chip">PPT</span><span class="lr-chip">拓展阅读</span></div>';
+}
+
+function _resourceFileCards(files){
+  if (!files.length) {
+    return '<div class="empty-state"><div class="empty-icon">📦</div><p>当前没有已生成的资源</p><p style="font-size:11px;color:var(--gray-400)">生成讲义、导图、测验、PPT 或案例后，这里会显示资源列表</p><div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'generator\')">去生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">先去提问</button></div></div>';
   }
+  return files.map(f => {
+    const origin = f.original_filename || f.filename || '资源文件';
+    const course = f.course_name || f.course_title || '';
+    const createdAt = f.created_at || f.updated_at || '';
+    const meta = [];
+    meta.push('<span>大小 ' + Math.round((f.size||0)/1024) + 'KB</span>');
+    meta.push('<span>' + esc(f.content_type || 'file') + '</span>');
+    meta.push('<span>' + esc(f.status || 'ready') + '</span>');
+    if (course) meta.push('<span>课程 ' + esc(course) + '</span>');
+    if (createdAt) meta.push('<span>' + esc(String(createdAt).slice(0, 19).replace('T', ' ')) + '</span>');
+    const rid = esc(f.resource_id);
+    const oname = esc(origin);
+    return '<div class="course-card"><h4>📄 ' + oname + '</h4><div class="course-meta">' + meta.join('') + '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+      _resourceDownloadBtn(f.resource_id, f.download_url, origin) +
+      '<button class="btn btn-sm btn-outline" onclick="bookmarkResource(\'' + rid + '\', \'' + oname + '\')">收藏</button><button class="btn btn-sm btn-outline" onclick="shareResource(\'' + rid + '\', \'' + oname + '\')">分享</button></div></div>';
+  }).join('');
 }
 
-async function loadResourceCenter(){
+function _resourceBookmarkCards(bookmarks){
+  if (!bookmarks.length) {
+    return '<div class="empty-state"><div class="empty-icon">🔖</div><p>暂无收藏资源</p><p style="font-size:11px;color:var(--gray-400)">收藏后会在这里集中展示</p></div>';
+  }
+  return bookmarks.map(b => {
+    const title = esc(b.title || b.resource_id || '收藏资源');
+    const rid = esc(b.resource_id || '');
+    return '<div class="course-card"><h4>🔖 ' + title + '</h4><div class="course-meta"><span>' + rid + '</span><span>收藏项</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看资源</button><button class="btn btn-sm btn-outline" onclick="shareResource(\'' + rid + '\', \'' + title + '\')">分享</button></div></div>';
+  }).join('');
+}
+
+function _resourceSessionCards(sessions){
+  if (!sessions.length) {
+    return '<div class="empty-state"><div class="empty-icon">💬</div><p>暂无会话</p><p style="font-size:11px;color:var(--gray-400)">先去提问，系统会在这里保存学习记录</p><div style="margin-top:10px"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">去提问</button></div></div>';
+  }
+  return sessions.slice(0,5).map(s => '<div class="course-card"><h4>💬 ' + esc(s.title || '学习会话') + '</h4><div class="course-meta"><span>消息 ' + (s.message_count || 0) + '</span><span>会话</span></div><div style="margin-top:8px"><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">查看会话</button></div></div>').join('');
+}
+
+async function loadResourceCenter(filter = 'all', queryArg, sortArg){
   const el = document.getElementById('page-resource-center');
   if (!el) return;
+  if (queryArg !== undefined && queryArg !== null) S.resourceCenterQuery = String(queryArg);
+  if (sortArg) S.resourceCenterSort = sortArg;
   el.innerHTML = '<div class="card"><div class="card-header"><h3>资源中心</h3></div><div class="loading-block"><span class="spinner"></span> 加载资源中...</div></div>';
   try {
-    const [filesRes, sessionsRes, bookmarksRes] = await Promise.all([api('/api/resources/generated'), api('/api/sessions'), api('/api/analytics/bookmarks')]);
-    const files = filesRes.ok ? (filesRes.data.files || []) : [];
+    const [filesRes, sessionsRes, bookmarksRes] = await Promise.all([
+      api('/api/resources/generated'),
+      api('/api/sessions'),
+      api('/api/analytics/bookmarks')
+    ]);
+    const query = (S.resourceCenterQuery || '').trim().toLowerCase();
+    const sort = S.resourceCenterSort || 'newest';
+    const filesRaw = filesRes.ok ? ((filesRes.data && filesRes.data.files) || filesRes.files || []) : [];
     const sessions = sessionsRes.ok ? (sessionsRes.data.sessions || []) : [];
     const bookmarks = bookmarksRes.ok ? (bookmarksRes.data.items || []) : [];
-    const fileCards = files.length ? files.map(f => '<div class="course-card"><h4>📄 ' + esc(f.original_filename || f.filename || '资源文件') + '</h4><div class="course-meta"><span>大小 ' + Math.round((f.size||0)/1024) + 'KB</span><span>' + esc(f.content_type || 'file') + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-sm btn-primary" href="' + S.apiBase + '/api/resources/download/' + esc(f.resource_id) + '" target="_blank">下载</a><button class="btn btn-sm btn-outline" onclick="bookmarkResource(\'' + esc(f.resource_id) + '\', \'' + esc(f.original_filename || f.filename || '资源文件') + '\')">收藏</button><button class="btn btn-sm btn-outline" onclick="shareResource(\'' + esc(f.resource_id) + '\', \'' + esc(f.original_filename || f.filename || '资源文件') + '\')">分享</button></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">📦</div><p>暂无生成资源</p><p style="font-size:11px;color:var(--gray-400)">生成思维导图、讲义、测验或 PPT 后会出现在这里</p><div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'generator\')">去生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">先去提问</button></div></div>';
-    const bookmarkCards = bookmarks.length ? bookmarks.map(b => '<div class="course-card"><h4>🔖 ' + esc(b.title || b.resource_id || '收藏资源') + '</h4><div class="course-meta"><span>' + esc(b.resource_id || '') + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看资源</button><button class="btn btn-sm btn-outline" onclick="shareResource(\'' + esc(b.resource_id || '') + '\', \'' + esc(b.title || '收藏资源') + '\')">分享</button></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🔖</div><p>暂无收藏</p><p style="font-size:11px;color:var(--gray-400)">收藏后会在这里集中显示</p></div>';
-    const sessionCards = sessions.length ? sessions.slice(0,5).map(s => '<div class="course-card"><h4>💬 ' + esc(s.title || '学习会话') + '</h4><div class="course-meta"><span>消息 ' + (s.message_count || 0) + '</span></div><div style="margin-top:8px"><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">查看会话</button></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">💬</div><p>暂无会话</p><p style="font-size:11px;color:var(--gray-400)">先去提问，系统会在这里保存学习记录</p><div style="margin-top:10px"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">去提问</button></div></div>';
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>资源中心</h3><button class="btn btn-sm btn-outline" onclick="loadResourceCenter()">🔄 刷新</button></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-sm btn-primary" onclick="navTo(\'generator\')">⚡ 去生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">💬 去提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'learning-report\')">📊 看学习报告</button></div>' + fileCards + '</div><div class="card"><div class="card-header"><h3>收藏资源</h3></div>' + bookmarkCards + '</div><div class="card"><div class="card-header"><h3>最近会话</h3></div>' + sessionCards + '</div>';
+    let files = filesRaw.slice();
+    if (query) {
+      files = files.filter(f => {
+        const hay = [f.original_filename, f.filename, f.content_type, f.status, f.course_name, f.course_title].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(query);
+      });
+    }
+    files.sort((a, b) => {
+      if (sort === 'name') return String(a.original_filename || a.filename || '').localeCompare(String(b.original_filename || b.filename || ''), 'zh-Hans-CN');
+      if (sort === 'size') return (Number(b.size) || 0) - (Number(a.size) || 0);
+      const ta = new Date(a.created_at || a.updated_at || 0).getTime();
+      const tb = new Date(b.created_at || b.updated_at || 0).getTime();
+      return sort === 'oldest' ? ta - tb : tb - ta;
+    });
+    const stats = _resourceStats(files, bookmarks);
+    const toolbar = _resourceToolbar(filter, query, sort);
+    const tags = _resourceTags();
+    const resourceFiles = _resourceFileCards(files);
+    const bookmarkCards = _resourceBookmarkCards(bookmarks);
+    const sessionCards = _resourceSessionCards(sessions);
+    const sections = [];
+    if (filter === 'all' || filter === 'file') sections.push('<div class="card"><div class="card-header"><h3>资源列表</h3></div>' + resourceFiles + '</div>');
+    if (filter === 'all' || filter === 'bookmark') sections.push('<div class="card"><div class="card-header"><h3>收藏资源</h3></div>' + bookmarkCards + '</div>');
+    if (filter === 'all' || filter === 'session') sections.push('<div class="card"><div class="card-header"><h3>最近会话</h3></div>' + sessionCards + '</div>');
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>资源中心</h3><button class="btn btn-sm btn-outline" onclick="loadResourceCenter(\'' + filter + '\')">🔄 刷新</button></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-sm btn-primary" onclick="navTo(\'generator\')">⚡ 去生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">💬 去提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'learning-report\')">📊 看学习报告</button></div>' + stats + toolbar + tags + '</div>' + sections.join('');
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">资源加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
   }
@@ -449,7 +894,19 @@ async function loadWrongBook(){
   try {
     const r = await api('/api/analytics/wrong-book');
     const items = r.ok ? (r.data.items || []) : [];
-    const body = items.length ? items.map(it => '<div class="course-card"><h4>🧯 ' + esc(it.knowledge_point || it.topic || '未命名知识点') + '</h4><div class="course-meta"><span>' + esc(it.question_text || '') + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">去追问</button><button class="btn btn-sm btn-outline" onclick="toast(\'后续可加入错题解析和收藏\', \'info\')">收藏</button><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成复习资源</button><button class="btn btn-sm btn-outline" onclick="joinReviewPlan(\'' + esc(it.knowledge_point || it.topic || '') + '\')">加入复习计划</button></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🧯</div><p>暂无错题</p><p style="font-size:11px;color:var(--gray-400)">做完测验后，错题会自动出现在这里</p><div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">去提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">去生成资源</button><button class="btn btn-sm btn-outline" onclick="joinReviewPlan(\'\')">加入复习计划</button></div></div>';
+    const body = items.length ? items.map(it => {
+      const kp = it.knowledge_point || it.topic || '未命名知识点';
+      const actions = (it.review_actions || []).map(a =>
+        '<button class="btn btn-sm btn-outline" onclick="joinReviewPlan(' + JSON.stringify(kp) + ', ' + JSON.stringify((a.resource_types || [])[0] || 'lecture_doc') + ')">' + esc(a.title || '复习') + '</button>'
+      ).join('');
+      return '<div class="course-card"><h4>🧯 ' + esc(kp) + '</h4><div class="course-meta"><span>' + esc(it.question_text || '') + '</span></div>' +
+        (it.explanation ? '<div class="course-meta"><span>解析：' + esc(it.explanation) + '</span></div>' : '') +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">去追问</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'quiz\', ' + JSON.stringify(kp) + ')">巩固练习</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'mindmap\', ' + JSON.stringify(kp) + ')">知识结构图</button>' +
+        actions +
+        '<button class="btn btn-sm btn-primary" onclick="joinReviewPlan(' + JSON.stringify(kp) + ')">生成复习路径</button></div></div>';
+    }).join('') : '<div class="empty-state"><div class="empty-icon">🧯</div><p>暂无错题</p><p style="font-size:11px;color:var(--gray-400)">做完测验后，错题会自动出现在这里</p><div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">去提问</button><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'quiz\', \'当前主题\')">去做练习</button></div></div>';
     el.innerHTML = '<div class="card"><div class="card-header"><h3>错题本</h3><button class="btn btn-sm btn-outline" onclick="loadWrongBook()">🔄 刷新</button></div>' + body + '</div>';
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">错题本加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
@@ -461,33 +918,74 @@ async function loadLearningReportPage(){
   if (!el) return;
   el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载中...</div>';
   try {
-    const [progressRes, wrongRes, bookmarkRes, auditRes] = await Promise.all([
+    const [progressRes, wrongRes, bookmarkRes, auditRes, reportRes] = await Promise.all([
       api('/api/analytics/progress'),
       api('/api/analytics/wrong-book'),
       api('/api/analytics/bookmarks'),
-      api('/api/analytics/audit?limit=20')
+      api('/api/analytics/audit?limit=20'),
+      api('/api/app/learning-report?course_id=' + S.courseId)
     ]);
     const progress = (progressRes.ok && progressRes.data.items && progressRes.data.items[0]) || {};
     const wrongItems = (wrongRes.ok && wrongRes.data.items) || [];
     const bookmarks = (bookmarkRes.ok && bookmarkRes.data.items) || [];
     const audits = (auditRes.ok && auditRes.data.items) || [];
+    const report = reportRes.ok ? unwrapApi(reportRes) : {};
     const rate = progress.total_lessons ? Math.round((progress.completed_lessons / progress.total_lessons) * 100) : Math.round((progress.completed_rate || 0) * 100);
-    const weakPoints = Array.isArray(progress.weak_points) ? progress.weak_points : [];
+    const weakPoints = (report.weak_points && report.weak_points.length) ? report.weak_points : (Array.isArray(progress.weak_points) ? progress.weak_points : []);
+    const nextActions = report.next_actions || [];
+    const profileSummary = report.profile_summary || {};
+    const accuracy = report.accuracy !== undefined ? Math.round((report.accuracy || 0) * 100) : null;
     const activityCards = audits.length ? audits.slice(0,5).map(a => '<div class="course-card"><h4>🧾 ' + esc(a.action || '行为记录') + '</h4><div class="course-meta"><span>' + esc(a.detail || '') + '</span></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🧾</div><p>暂无行为记录</p></div>';
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习报告</h3><button class="btn btn-sm btn-outline" onclick="loadLearningReportPage()">🔄 刷新</button></div><div class="lr-summary"><div class="lr-stat"><span class="lr-stat-value">' + rate + '%</span><span class="lr-stat-label">完成率</span></div><div class="lr-stat"><span class="lr-stat-value">' + wrongItems.length + '</span><span class="lr-stat-label">错题数</span></div><div class="lr-stat"><span class="lr-stat-value">' + bookmarks.length + '</span><span class="lr-stat-label">收藏数</span></div></div><div class="lr-section"><div class="lr-section-title">学习建议</div><div class="course-card"><h4>' + esc(progress.next_recommendation || '先完成一次问答或测验，系统会给出下一步推荐') + '</h4></div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">继续提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'wrong-book\')">复盘错题</button><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看收藏资源</button></div></div>' + (weakPoints.length ? '<div class="lr-section"><div class="lr-section-title">薄弱知识点</div><div class="lr-chips">' + weakPoints.map(w => '<span class="lr-chip">' + esc(w) + '</span>').join('') + '</div></div>' : '') + '<div class="lr-section"><div class="lr-section-title">近期行为</div>' + activityCards + '</div><div class="lr-section"><div class="lr-section-title">学习目标</div><div class="course-card"><h4>建立“提问 - 生成 - 测验 - 复盘 - 推荐”的学习闭环</h4></div></div></div>';
+    const actionCards = nextActions.length ? nextActions.map(a =>
+      '<div class="course-card"><h4>' + esc(a.title || '下一步') + '</h4><div class="course-meta"><span>' + esc(a.detail || '') + '</span></div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+      ((a.resource_types || []).map(t => '<button class="btn btn-sm btn-outline" onclick="quickGenerateFromChat(' + JSON.stringify(t) + ', ' + JSON.stringify(weakPoints[0] || '当前主题') + ')">生成 ' + esc(t) + '</button>').join('')) +
+      '</div></div>'
+    ).join('') : '<div class="course-card"><h4>' + esc(progress.next_recommendation || '先完成一次问答或测验，系统会给出下一步推荐') + '</h4></div>';
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习报告</h3><button class="btn btn-sm btn-outline" onclick="loadLearningReportPage()">🔄 刷新</button></div>' +
+      '<div class="lr-summary">' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + rate + '%</span><span class="lr-stat-label">完成率</span></div>' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + wrongItems.length + '</span><span class="lr-stat-label">错题数</span></div>' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + bookmarks.length + '</span><span class="lr-stat-label">收藏数</span></div>' +
+      (accuracy !== null ? '<div class="lr-stat"><span class="lr-stat-value">' + accuracy + '%</span><span class="lr-stat-label">测验正确率</span></div>' : '') +
+      '</div>' +
+      '<div class="lr-section"><div class="lr-section-title">画像驱动建议</div>' + actionCards +
+      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">继续提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'wrong-book\')">复盘错题</button><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看收藏资源</button></div></div>' +
+      (weakPoints.length ? '<div class="lr-section"><div class="lr-section-title">薄弱知识点</div><div class="lr-chips">' + weakPoints.map(w => '<span class="lr-chip">' + esc(w) + '</span>').join('') + '</div></div>' : '') +
+      '<div class="lr-section"><div class="lr-section-title">近期行为</div>' + activityCards + '</div>' +
+      '<div class="lr-section"><div class="lr-section-title">学习目标</div><div class="course-card"><h4>' + esc(profileSummary.learning_goal || '建立“提问 - 生成 - 测验 - 复盘 - 推荐”的学习闭环') + '</h4><div class="course-meta"><span>基础水平 ' + esc(profileSummary.knowledge_level || '待识别') + '</span></div></div></div></div>';
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">学习报告加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
   }
 }
 
-async function joinReviewPlan(topic){
+async function joinReviewPlan(topic, resourceType){
+  const kp = (topic || '').trim() || '错题复习';
   try {
-    await api('/api/analytics/audit', {
+    const r = await api('/api/analytics/review-plan', {
       method: 'POST',
-      body: JSON.stringify({ action: 'review_plan_join', target_type: 'topic', target_id: topic || '', detail: topic || '错题复习' })
+      body: JSON.stringify({
+        course_id: S.courseId,
+        topic: kp,
+        knowledge_points: [kp],
+      }),
     });
-  } catch (_) {}
-  toast('已加入复习计划', 'success');
+    if (r.ok && r.data) {
+      const planPayload = unwrapApi(r);
+      S.pendingStudyPlan = planPayload.study_plan || r.data.study_plan || null;
+      S.pendingStudyTopic = kp;
+      toast('复习路径已生成', 'success');
+      if (resourceType && resourceType !== 'study_plan') {
+        navTo('assistant');
+        loadArtifactPreview(resourceType, kp);
+        return;
+      }
+      navTo('learning-path');
+      return;
+    }
+    toast((r.data && r.data.detail) || '复习计划生成失败', 'info');
+  } catch (e) {
+    toast(e.message || '复习计划生成失败', 'info');
+  }
 }
 
 async function loadSettings(){
@@ -497,16 +995,239 @@ async function loadSettings(){
   try {
     const r = await api('/api/settings/status');
     const d = (r.ok && r.data) ? r.data : {};
-    el.innerHTML = '<div class="grid grid-2"><div class="card"><div class="card-header"><h3>账户与角色</h3></div><div class="form-group"><label>当前用户</label><input readonly value="' + esc((S.user && S.user.username) || '未登录') + '"></div><div class="form-group"><label>当前课程</label><input readonly value="' + esc(S.courseName || '未选择') + '"></div><button class="btn btn-primary" onclick="_loginDemo()">演示登录</button> <button class="btn btn-outline" onclick="_logout()">退出</button></div><div class="card"><div class="card-header"><h3>系统状态</h3></div><div class="lr-section"><div class="lr-section-title">模型与服务</div><div class="course-card"><h4>主模型：' + esc(d.llm_model || '未知') + '</h4><div class="course-meta"><span>提供方：' + esc(d.llm_provider || '未知') + '</span></div></div><div class="course-card"><h4>DeepSeek：' + (d.deepseek_configured ? '已配置' : '未配置') + '</h4><div class="course-meta"><span>Fallback：' + (d.fallback_available ? '可用' : '不可用') + '</span></div></div><div class="course-card"><h4>语义索引：' + (d.embedding_is_mock ? 'Mock' : '已启用') + '</h4><div class="course-meta"><span>Chroma / 检索链路状态将逐步接入</span></div></div></div></div></div>';
+    S.llmProvider = d.llm_provider || S.llmProvider;
+    S.llmModel = d.llm_model || S.llmModel;
+    updateTopbar();
+    const loggedIn = !!S.token;
+    const providerLabel = d.llm_provider === 'spark' ? '科大讯飞 Spark' : (d.llm_provider === 'deepseek' ? 'DeepSeek' : esc(d.llm_provider || '未知'));
+    const sparkBase = 'https://spark-api-open.xf-yun.com/v1';
+    const dsBase = 'https://api.deepseek.com';
+    el.innerHTML =
+      '<div class="grid grid-2">' +
+      '<div class="card"><div class="card-header"><h3>登录与账户</h3></div>' +
+      '<div class="form-group"><label>当前用户</label><input readonly value="' + esc((S.user && S.user.username) || '未登录') + '"></div>' +
+      '<div class="form-group"><label>当前课程</label><input readonly value="' + esc(S.courseName || '未选择') + '"></div>' +
+      '<div class="form-group"><label>登录状态</label><input readonly value="' + (loggedIn ? '已登录' : '未登录') + '"></div>' +
+      '<div class="form-group"><label>用户名</label><input id="auth-username" placeholder="请输入用户名"></div>' +
+      '<div class="form-group"><label>密码</label><input id="auth-password" type="password" placeholder="至少 8 位"></div>' +
+      '<p style="font-size:11px;color:var(--gray-400)">注册默认为学生账户；教师/管理员由系统管理员分配。</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="doLogin()">登录</button><button class="btn btn-secondary" onclick="doRegister()">注册</button><button class="btn btn-outline" onclick="_logout()">退出</button></div></div>' +
+      '<div class="card"><div class="card-header"><h3>推理引擎配置</h3></div>' +
+      '<div class="course-card"><h4>当前：' + providerLabel + '</h4><div class="course-meta"><span>模型 ' + esc(d.llm_model || '未知') + '</span><span>' + (d.is_mock ? 'Mock' : '在线') + '</span></div></div>' +
+      '<div class="form-group"><label>提供方</label><select id="llm-provider" class="input" onchange="onLlmProviderChange()"><option value="spark"' + (d.llm_provider === 'spark' ? ' selected' : '') + '>科大讯飞 Spark（答辩推荐）</option><option value="deepseek"' + (d.llm_provider === 'deepseek' ? ' selected' : '') + '>DeepSeek</option></select></div>' +
+      '<div class="form-group"><label>API Key / APIPassword</label><input id="llm-api-key" class="input" type="password" placeholder="不会显示已保存的密钥"></div>' +
+      '<div class="form-group"><label>Base URL</label><input id="llm-base-url" class="input" value="' + esc(d.llm_provider === 'spark' ? sparkBase : dsBase) + '"></div>' +
+      '<div class="form-group"><label>模型名称</label><input id="llm-model" class="input" value="' + esc(d.llm_provider === 'spark' ? (d.spark_model || 'generalv3.5') : (d.deepseek_model || 'deepseek-v4-pro')) + '"></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="saveLlmConfig()">保存配置</button><button class="btn btn-outline" onclick="testLlmConnection()">测试连接</button></div>' +
+      '<p id="llm-test-result" style="font-size:11px;color:var(--gray-400);margin-top:8px">保存/测试 LLM 配置需管理员账户；学生请在 backend/.env 由管理员预配置</p></div></div>' +
+      '<div class="card" style="margin-top:12px"><div class="card-header"><h3>系统状态</h3></div>' +
+      '<div class="grid grid-3"><div class="card grid-stat"><div class="val">' + (d.spark_configured ? '✓' : '—') + '</div><div class="lbl">Spark</div></div>' +
+      '<div class="card grid-stat"><div class="val">' + (d.deepseek_configured ? '✓' : '—') + '</div><div class="lbl">DeepSeek</div></div>' +
+      '<div class="card grid-stat"><div class="val">' + (d.fallback_available ? '✓' : '—') + '</div><div class="lbl">Fallback</div></div></div>' +
+      '<div class="course-card" style="margin-top:12px"><h4>问答模式</h4><div class="course-meta"><span>SSE 流式 ' + (S.useStreamAsk ? '已开启' : '已关闭') + '</span><span>演示模式 ' + (S.demoMode ? '已开启' : '已关闭') + '</span></div></div></div>';
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">设置加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
   }
+}
+
+function onLlmProviderChange(){
+  const p = (document.getElementById('llm-provider') || {}).value || 'spark';
+  const baseEl = document.getElementById('llm-base-url');
+  const modelEl = document.getElementById('llm-model');
+  if (baseEl) baseEl.value = p === 'spark' ? 'https://spark-api-open.xf-yun.com/v1' : 'https://api.deepseek.com';
+  if (modelEl) modelEl.value = p === 'spark' ? 'generalv3.5' : 'deepseek-v4-pro';
+}
+
+async function saveLlmConfig(){
+  const provider = (document.getElementById('llm-provider') || {}).value || 'spark';
+  const apiKey = (document.getElementById('llm-api-key') || {}).value || '';
+  const baseUrl = (document.getElementById('llm-base-url') || {}).value || '';
+  const model = (document.getElementById('llm-model') || {}).value || '';
+  if (!apiKey.trim()) return toast('请填写 API Key / APIPassword', 'info');
+  try {
+    const r = await api('/api/settings/llm', {
+      method: 'POST',
+      body: JSON.stringify({ provider, api_key: apiKey.trim(), base_url: baseUrl.trim(), model: model.trim(), timeout_seconds: 60 }),
+    });
+    if (r.ok && r.data && r.data.ok !== false) {
+      toast('配置已保存', 'success');
+      loadSettings();
+      return;
+    }
+    toast(r.status === 403 ? '仅管理员可保存 LLM 配置' : ((r.data && r.data.detail) || '保存失败'), 'info');
+  } catch (e) {
+    toast(e.message || '保存失败', 'info');
+  }
+}
+
+async function testLlmConnection(){
+  const provider = (document.getElementById('llm-provider') || {}).value || '';
+  const model = (document.getElementById('llm-model') || {}).value || '';
+  const resultEl = document.getElementById('llm-test-result');
+  if (resultEl) resultEl.textContent = '正在测试连接...';
+  try {
+    const r = await api('/api/settings/test-llm', {
+      method: 'POST',
+      body: JSON.stringify({ provider, model, message: '你好，请用一句话确认连接成功' }),
+    });
+    const d = (r.ok && r.data) ? r.data : {};
+    if (d.ok) {
+      if (resultEl) resultEl.textContent = '连接成功 · ' + esc(d.provider || '') + ' · ' + esc(d.model || '') + ' · ' + Math.round(d.latency_ms || 0) + 'ms';
+      toast('模型连接测试成功', 'success');
+      S.llmProvider = d.provider || provider;
+      S.llmModel = d.model || model;
+      updateTopbar();
+      return;
+    }
+    if (resultEl) resultEl.textContent = esc(d.message || d.error || '连接失败');
+    toast(d.message || '连接失败', 'info');
+  } catch (e) {
+    if (resultEl) resultEl.textContent = esc(e.message || '连接失败');
+    toast(e.message || '连接失败', 'info');
+  }
+}
+
+async function doLogin(){
+  const username = (document.getElementById('auth-username') || {}).value?.trim() || '';
+  const password = (document.getElementById('auth-password') || {}).value || '';
+  if (!username || !password) return toast('请输入用户名和密码', 'info');
+  try {
+    const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    if (r.ok && r.data && r.data.access_token) {
+      setToken(r.data.access_token);
+      S.user = { username };
+      toast('登录成功', 'success');
+      updateTopbar();
+      try {
+        const boot = await api('/api/app/bootstrap');
+        const bootPayload = unwrapApi(boot);
+        if (boot.ok && bootPayload && bootPayload.user) S.user = bootPayload.user;
+      } catch (_) {}
+      navTo('dashboard');
+      return;
+    }
+    toast((r.data && r.data.detail) || '登录失败', 'info');
+  } catch (e) {
+    toast(e.message || '登录失败', 'info');
+  }
+}
+
+async function doRegister(){
+  const username = (document.getElementById('auth-username') || {}).value?.trim() || '';
+  const password = (document.getElementById('auth-password') || {}).value || '';
+  if (!username || !password) return toast('请输入用户名和密码', 'info');
+  if (password.length < 8) return toast('密码至少 8 位', 'info');
+  try {
+    const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, password, role: 'student' }) });
+    if (r.ok) {
+      toast('注册成功，请直接登录', 'success');
+      return;
+    }
+    toast((r.data && r.data.detail) || '注册失败', 'info');
+  } catch (e) {
+    toast(e.message || '注册失败', 'info');
+  }
+}
+
+function _finishAskResponse(el, msg, d, box){
+  const answer = d.answer || d.content || d.result || '';
+  const refs = d.refs || d.citations || [];
+  const suggestions = d.resource_suggestions || [];
+  S.lastAnswer = answer;
+  if (el) {
+    el.innerHTML = '<div class="msg-content">' + esc(answer || '已收到问题，当前环境暂未返回正式答案。') + '</div>' +
+      (refs.length ? '<div class="msg-citations">📚 ' + refs.map(x => esc(typeof x === 'string' ? x : (x.source || x.chunk_id || '引用'))).join(' · ') + '</div>' : '') +
+      _renderResourceSuggestions(suggestions, msg);
+  }
+  _renderAskSidebar(d);
+  const statusEl = document.getElementById('avatar-status-text');
+  if (statusEl) {
+    statusEl.textContent = (d.provider ? '模型 ' + d.provider : '讲解就绪') + ' · 可点击「讲解回答」';
+  }
+  const artifacts = d.generated_artifacts || {};
+  if (artifacts.ready_for_generation && artifacts.suggestions && artifacts.suggestions.length) {
+    const first = artifacts.suggestions[0];
+    if (first && first.type) toast('可点击推荐按钮在右侧预览 ' + (first.title || first.type), 'info');
+  }
+  if (S.demoMode && msg) {
+    setTimeout(function(){ loadArtifactPreview('mindmap', msg); }, 400);
+  }
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+async function streamAsk(payload, onToken){
+  const headers = { 'Content-Type': 'application/json' };
+  if (S.token) headers.Authorization = 'Bearer ' + S.token;
+  const res = await fetch(S.apiBase.replace(/\/$/, '') + '/api/app/ask/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = 'stream failed';
+    try {
+      const err = await res.json();
+      detail = err.detail || err.error || detail;
+    } catch (_) {}
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+  }
+  if (!res.body) throw new Error('stream body unavailable');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let meta = {};
+  let doneData = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split('\n\n');
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      let eventName = 'message';
+      let dataStr = '';
+      block.split('\n').forEach(function(line){
+        if (line.indexOf('event:') === 0) eventName = line.slice(6).trim();
+        else if (line.indexOf('data:') === 0) dataStr += line.slice(5).trim();
+      });
+      if (!dataStr) continue;
+      const parsed = JSON.parse(dataStr);
+      if (eventName === 'meta') {
+        meta = parsed;
+        _renderAskSidebar({
+          citations: parsed.citations || [],
+          agent_traces: parsed.agent_traces || [],
+          provider: parsed.provider,
+          model: parsed.model,
+        });
+      } else if (eventName === 'token') {
+        if (onToken) onToken(parsed.token || '');
+      } else if (eventName === 'done') {
+        doneData = parsed;
+      } else if (eventName === 'error') {
+        throw new Error(parsed.error || 'stream error');
+      }
+    }
+  }
+  return Object.assign({}, doneData || {}, {
+    citations: (doneData && doneData.citations) || meta.citations || [],
+    provider: (doneData && doneData.provider) || meta.provider,
+    model: (doneData && doneData.model) || meta.model,
+    agent_traces: (doneData && doneData.agent_traces) || meta.agent_traces || [],
+    verifier_score: doneData && doneData.verifier_score,
+    student_profile: (doneData && doneData.student_profile) || {},
+    generated_artifacts: (doneData && doneData.generated_artifacts) || {},
+  });
 }
 
 async function sendQuestion(){
   const input = document.getElementById('chat-input');
   const msg = input ? input.value.trim() : '';
   if (!msg) return toast('请输入问题', 'info');
+  if (!S.token) return toast('请先登录后再提问', 'info');
   const box = document.getElementById('chat-messages');
   if (box) box.innerHTML += '<div class="msg-bubble user"><div class="msg-content">' + esc(msg) + '</div></div>';
   if (input) input.value = '';
@@ -514,25 +1235,360 @@ async function sendQuestion(){
   const typingId = 'typing-' + Date.now();
   if (box) box.innerHTML += '<div class="msg-bubble agent" id="' + typingId + '"><div class="msg-content">正在检索课程资料并生成回答...</div></div>';
 
-  try {
-    const payload = { course_id: S.courseId, question: msg, history: [], top_k: 5, session_id: null };
-    const r = await api('/api/app/ask', { method: 'POST', body: JSON.stringify(payload) });
-    const answer = (r.ok && r.data && (r.data.answer || r.data.content || r.data.result))
-      ? (r.data.answer || r.data.content || r.data.result)
-      : null;
-    const refs = (r.ok && r.data && (r.data.refs || r.data.citations)) ? (r.data.refs || r.data.citations) : [];
-    const el = document.getElementById(typingId);
-    if (el) {
-      el.innerHTML = '<div class="msg-content">' + esc(answer || '已收到问题，当前环境暂未返回正式答案。') + '</div>' + (refs.length ? '<div class="msg-citations">📚 ' + refs.map(x => esc(typeof x === 'string' ? x : (x.source || x.chunk_id || '引用'))).join(' · ') + '</div>' : '');
+  const sessionSelect = document.getElementById('session-select');
+  const sessionId = sessionSelect && sessionSelect.value ? Number(sessionSelect.value) : null;
+  const payload = { course_id: S.courseId, question: msg, top_k: 5, session_id: sessionId };
+
+  if (S.useStreamAsk) {
+    try {
+      let full = '';
+      const d = await streamAsk(payload, function(token){
+        full += token;
+        const ce = document.querySelector('#' + typingId + ' .msg-content');
+        if (ce) ce.textContent = full || '正在生成回答...';
+        if (box) box.scrollTop = box.scrollHeight;
+      });
+      d.answer = d.answer || full;
+      if (!d.answer && _applyDemoAskFallback(typingId, msg, box)) return;
+      _finishAskResponse(document.getElementById(typingId), msg, d, box);
+      return;
+    } catch (streamErr) {
+      if (_applyDemoAskFallback(typingId, msg, box)) return;
+      const ce = document.querySelector('#' + typingId + ' .msg-content');
+      if (ce) ce.textContent = '流式回答不可用，正在切换标准模式...';
     }
-    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  try {
+    const r = await api('/api/app/ask', { method: 'POST', body: JSON.stringify(payload) });
+    if (!r.ok) {
+      if (_applyDemoAskFallback(typingId, msg, box)) return;
+      const detail = (r.data && (r.data.detail || r.data.message)) || ('HTTP ' + r.status);
+      _showAskError(typingId, typeof detail === 'string' ? detail : JSON.stringify(detail));
+      toast(r.status === 401 ? '请先登录' : '问答请求失败', 'info');
+      return;
+    }
+    const d = unwrapApi(r);
+    if (!d.answer && _applyDemoAskFallback(typingId, msg, box)) return;
+    _finishAskResponse(document.getElementById(typingId), msg, d, box);
     return;
   } catch (e) {
-    const el = document.getElementById(typingId);
-    if (el) {
-      el.innerHTML = '<div class="msg-content">' + esc('我已经收到你的问题。当前环境下问答服务暂未完全接通，但你可以继续围绕课程资料提问。') + '</div>';
+    if (_applyDemoAskFallback(typingId, msg, box)) return;
+    _showAskError(typingId, e.message || '网络错误');
+    toast('问答服务暂时不可用', 'info');
+  }
+}
+
+function _speakText(text, label){
+  if (!text || !text.trim()) return toast('暂无可讲解内容', 'info');
+  if (!window.speechSynthesis) return toast('当前浏览器不支持语音讲解', 'info');
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text.slice(0, 1500));
+  utter.lang = 'zh-CN';
+  utter.rate = 0.95;
+  S.speechUtterance = utter;
+  const statusEl = document.getElementById('avatar-status-text');
+  if (statusEl) statusEl.textContent = '正在讲解' + (label ? '：' + label : '') + '...';
+  utter.onend = function(){
+    if (statusEl) statusEl.textContent = '讲解完成，可再次播放';
+  };
+  utter.onerror = function(){
+    if (statusEl) statusEl.textContent = '讲解失败，请重试';
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function _profileSnapshotText(profile){
+  if (!profile) return '尚未提取画像';
+  const bits = [];
+  if (profile.profile_version) bits.push('版本 ' + profile.profile_version);
+  if (profile.profile_source) bits.push('来源 ' + profile.profile_source);
+  if (profile.profile_confidence !== undefined && profile.profile_confidence !== null) bits.push('置信度 ' + Math.round((Number(profile.profile_confidence) || 0) * 100) + '%');
+  return bits.join(' · ') || '尚未提取画像';
+}
+
+async function loadProfileCenter(){
+  const el = document.getElementById('page-profile');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载学习画像中...</div>';
+  try {
+    const [profileRes, eventsRes] = await Promise.all([
+      api('/api/profiles/current'),
+      api('/api/analytics/profile-events?limit=10')
+    ]);
+    const eventsRaw = eventsRes.ok ? (eventsRes.data || eventsRes) : {};
+    const events = eventsRaw.data || eventsRaw;
+    const profile = profileRes.ok ? (profileRes.data || profileRes) : {};
+    const weakPoints = _parseJsonList(profile.weak_points);
+    const prefs = _parseJsonList(profile.resource_preference);
+    const versions = events.versions || [];
+    const changes = events.changes || [];
+    const cards = [
+      ['知识基础', profile.knowledge_level || '未识别'],
+      ['学习目标', profile.learning_goal || '未识别'],
+      ['学习阶段', _stageLabel(profile.learning_stage)],
+      ['认知风格', profile.cognitive_style || '未识别'],
+      ['学习节奏', profile.pace_preference || 'moderate'],
+      ['学习动机', profile.motivation || '未识别'],
+    ];
+    let h = '';
+    h += '<div class="card"><div class="card-header"><h3>学习画像中心</h3><button class="btn btn-sm btn-outline" onclick="loadProfileCenter()">🔄 刷新</button></div>';
+    h += '<div class="course-card"><h4>画像概览</h4><div class="course-meta"><span>' + esc(_profileSnapshotText(profile)) + '</span></div></div>';
+    h += '<div class="grid grid-3" style="margin-top:12px">' + cards.map(c => '<div class="card grid-stat"><div class="val" style="color:var(--primary)">' + esc(c[1]) + '</div><div class="lbl">' + esc(c[0]) + '</div></div>').join('') + '</div>';
+    h += '<div class="grid grid-2" style="margin-top:12px">';
+    h += '<div class="card"><div class="card-header"><h3>偏好与薄弱点</h3></div><div class="course-card"><h4>内容偏好</h4><div class="course-meta"><span>' + esc(prefs.join(' · ') || '暂无') + '</span></div></div><div class="course-card"><h4>薄弱点</h4><div class="course-meta"><span>' + esc(weakPoints.join(' · ') || '暂无') + '</span></div></div><div class="course-card"><h4>画像来源</h4><div class="course-meta"><span>' + esc(profile.profile_source || 'dialogue') + '</span></div></div></div>';
+    h += '<div class="card"><div class="card-header"><h3>画像操作</h3></div><div class="course-card"><h4>自动对话构建</h4><div class="course-meta"><span>通过自然语言提取并持续修正画像</span></div></div><div class="course-card"><h4>历史版本</h4><div class="course-meta"><span>' + esc(String(versions.length)) + ' 个版本</span></div></div><div class="course-card"><h4>变更日志</h4><div class="course-meta"><span>' + esc(String(changes.length)) + ' 条变化记录</span></div></div></div>';
+    h += '</div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>对话式画像构建</h3></div>';
+    h += '<div class="form-group"><label>用自然语言描述你的专业、目标、偏好与薄弱点</label><textarea id="profile-dialogue-input" class="input" rows="4" placeholder="例如：我是计算机专业，准备考研，基础一般，喜欢看思维导图和例题，导数和线性代数比较薄弱"></textarea></div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="extractProfileFromDialogue()">从对话更新画像</button><button class="btn btn-outline" onclick="confirmProfile()">确认当前画像</button><button class="btn btn-outline" onclick="navTo(\'assistant\')">去会话中心</button></div></div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>系统判断依据</h3></div>';
+    h += (changes.length ? changes.slice(0, 8).map(c => '<div class="course-card"><h4>' + esc(c.field_name) + '</h4><div class="course-meta"><span>' + esc(c.old_value || '—') + ' → ' + esc(c.new_value || '—') + '</span></div><div class="course-meta"><span>' + esc(c.reason || '') + '</span><span>来源 ' + esc(c.source_type || '') + '</span></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">💡</div><p>暂无解释记录，发起对话或学习行为后会自动生成</p></div>') + '</div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>历史版本</h3></div>' + (versions.length ? versions.map(v => '<div class="course-card"><h4>版本 #' + esc(v.version) + '</h4><div class="course-meta"><span>' + esc(v.trigger_source || 'dialogue') + '</span><span>置信度 ' + esc(String(v.confidence || 0)) + '</span></div><div style="margin-top:6px"><button class="btn btn-sm btn-outline" onclick="restoreProfileVersion(' + esc(v.id) + ')">回滚到此版本</button></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🕰️</div><p>暂无历史版本</p></div>') + '</div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>变更日志</h3></div>' + (changes.length ? changes.map(c => '<div class="course-card"><h4>' + esc(c.field_name) + '</h4><div class="course-meta"><span>' + esc(c.old_value || '—') + '</span><span>→</span><span>' + esc(c.new_value || '—') + '</span></div><div class="course-meta"><span>' + esc(c.reason || '') + '</span></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🧾</div><p>暂无变更日志</p></div>') + '</div>';
+    el.innerHTML = h;
+  } catch (e) {
+    el.innerHTML = '<div class="error-card"><div class="err-title">画像加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+async function extractProfileFromDialogue(){
+  const el = document.getElementById('profile-dialogue-input');
+  const message = el ? el.value.trim() : '';
+  if (!message) return toast('请先输入描述', 'info');
+  try {
+    const r = await api('/api/profiles/me/extract', { method: 'POST', body: JSON.stringify({ message }) });
+    if (r.ok) {
+      toast('画像已从对话更新', 'success');
+      loadProfileCenter();
+      return;
     }
-    toast('问答服务暂时不可用，已显示降级回复', 'info');
+    toast((r.data && r.data.detail) || '画像更新失败', 'info');
+  } catch (e) {
+    toast(e.message || '画像更新失败', 'info');
+  }
+}
+
+async function confirmProfile(){
+  try {
+    const r = await api('/api/profiles/me/confirm', { method: 'POST', body: JSON.stringify({}) });
+    if (r.ok) {
+      toast('已确认当前画像', 'success');
+      loadProfileCenter();
+      return;
+    }
+    toast('确认失败', 'info');
+  } catch (e) {
+    toast(e.message || '确认失败', 'info');
+  }
+}
+
+async function loadCourses(){
+  const el = document.getElementById('page-courses');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载课程中...</div>';
+  try {
+    const r = await api('/api/courses');
+    const courses = r.ok ? (Array.isArray(r.data) ? r.data : []) : (S.courses || []);
+    if (!courses.length && S.courses.length) courses.push(...S.courses);
+    S.courses = courses;
+    const body = courses.length ? courses.map(c => {
+      const cid = c.id;
+      const active = cid === S.courseId;
+      return '<div class="course-card"><h4>📘 ' + esc(c.name || '未命名课程') + (active ? ' <span class="topbar-badge ok">当前</span>' : '') + '</h4><div class="course-meta"><span>' + esc(c.description || '暂无简介') + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm ' + (active ? 'btn-outline' : 'btn-primary') + '" onclick="selectCourse(' + esc(cid) + ', ' + JSON.stringify(c.name || '') + ')">' + (active ? '已选中' : '切换到此课程') + '</button></div></div>';
+    }).join('') : '<div class="empty-state"><div class="empty-icon">📘</div><p>暂无课程</p><p style="font-size:11px;color:var(--gray-400)">教师账户可创建课程并上传资料</p></div>';
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>课程中心</h3><button class="btn btn-sm btn-outline" onclick="loadCourses()">🔄 刷新</button><button class="btn btn-sm btn-primary" onclick="createCoursePrompt()">+ 新建课程</button></div>' + body + '</div>';
+  } catch (e) {
+    el.innerHTML = '<div class="error-card"><div class="err-title">课程加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+function selectCourse(id, name){
+  S.courseId = Number(id) || S.courseId;
+  S.courseName = name || S.courseName;
+  updateTopbar();
+  toast('已切换到课程：' + (name || id), 'success');
+  loadCourses();
+}
+
+async function createCoursePrompt(){
+  const name = window.prompt('请输入课程名称');
+  if (!name || !name.trim()) return;
+  const description = window.prompt('请输入课程简介（可选）') || '';
+  try {
+    const r = await api('/api/courses', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: description.trim() }) });
+    if (r.ok && r.data) {
+      toast('课程创建成功', 'success');
+      loadCourses();
+      return;
+    }
+    toast((r.data && r.data.detail) || '创建失败，可能需要教师权限', 'info');
+  } catch (e) {
+    toast(e.message || '创建失败', 'info');
+  }
+}
+
+async function loadKnowledgeBase(){
+  const el = document.getElementById('page-knowledge');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载知识库中...</div>';
+  try {
+    const [dashRes, filesRes] = await Promise.all([
+      api('/api/app/dashboard?course_id=' + S.courseId),
+      api('/api/courses/' + S.courseId + '/files')
+    ]);
+    const dash = dashRes.ok ? unwrapApi(dashRes) : {};
+    const kb = dash.knowledge_base || {};
+    const files = filesRes.ok ? (Array.isArray(filesRes.data) ? filesRes.data : []) : [];
+    const role = (S.user && S.user.role) || 'student';
+    const canUpload = role === 'teacher' || role === 'admin';
+    const uploadBlock = canUpload
+      ? '<div class="form-group"><label>支持 PDF / Word / TXT / PPT</label><input id="kb-upload-input" type="file" accept=".pdf,.doc,.docx,.txt,.ppt,.pptx" onchange="uploadCourseFile(this)"></div><p style="font-size:11px;color:var(--gray-400)">上传后系统会自动解析、切片并写入 ChromaDB 向量库。</p><button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="buildCourseIndex()">🔍 重建向量索引</button>'
+      : '<div class="course-card"><h4>上传权限</h4><div class="course-meta"><span>请使用教师或管理员账户上传课程资料</span></div></div>';
+    const fileCards = files.length ? files.map(f =>
+      '<div class="course-card"><h4>📄 ' + esc(f.original_filename || '文件') + '</h4><div class="course-meta"><span>状态 ' + esc(f.status || 'unknown') + '</span><span>' + esc(f.content_type || '') + '</span></div></div>'
+    ).join('') : '<div class="empty-state"><div class="empty-icon">📚</div><p>暂无课程文件</p><p style="font-size:11px;color:var(--gray-400)">上传 PDF/PPT/Word 后将自动切片入库</p></div>';
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>知识库 · ' + esc(S.courseName || '') + '</h3><button class="btn btn-sm btn-outline" onclick="loadKnowledgeBase()">🔄 刷新</button></div>' +
+      '<div class="grid grid-3" style="margin-bottom:12px"><div class="card grid-stat"><div class="val" style="color:var(--primary)">' + esc(String(kb.chunks_count || 0)) + '</div><div class="lbl">知识片段</div></div><div class="card grid-stat"><div class="val" style="color:var(--success)">' + esc(String(kb.vector_count || 0)) + '</div><div class="lbl">向量索引</div></div><div class="card grid-stat"><div class="val" style="color:var(--warning)">' + esc(kb.status || 'unknown') + '</div><div class="lbl">库状态</div></div></div>' +
+      '<div class="card" style="margin-bottom:12px"><div class="card-header"><h3>上传课程资料</h3></div>' + uploadBlock + '</div>' +
+      '<div class="card"><div class="card-header"><h3>课程文件</h3></div>' + fileCards + '</div></div>';
+  } catch (e) {
+    el.innerHTML = '<div class="error-card"><div class="err-title">知识库加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+async function _pollKnowledgeBaseChunks(maxTries){
+  for (let i = 0; i < maxTries; i++) {
+    await new Promise(function(resolve){ setTimeout(resolve, 1500); });
+    try {
+      const dash = await api('/api/app/dashboard?course_id=' + S.courseId);
+      const kb = dash.ok ? (unwrapApi(dash).knowledge_base || {}) : {};
+      const chunks = Number(kb.chunks_count || 0);
+      const vectors = Number(kb.vector_count || 0);
+      if (chunks > 0 && vectors > 0) {
+        loadKnowledgeBase();
+        toast('知识库已更新：' + chunks + ' 片段 · ' + vectors + ' 向量', 'success');
+        return;
+      }
+      if (chunks > 0 && i >= maxTries - 1) {
+        loadKnowledgeBase();
+        toast('切片已入库（' + chunks + '），向量索引可能仍在构建', 'info');
+        return;
+      }
+    } catch (_) {}
+  }
+  loadKnowledgeBase();
+}
+
+async function buildCourseIndex(){
+  if (!S.token) return toast('请先登录', 'info');
+  toast('正在构建 ChromaDB 向量索引...', 'info');
+  try {
+    const r = await api('/api/rag/courses/' + S.courseId + '/build', { method: 'POST' });
+    if (r.ok && r.data) {
+      toast('向量索引已更新：' + (r.data.indexed_chunks || 0) + ' 条', 'success');
+      loadKnowledgeBase();
+      return;
+    }
+    toast((r.data && r.data.detail) || '构建失败，可能需要教师权限', 'info');
+  } catch (e) {
+    toast(e.message || '构建失败', 'info');
+  }
+}
+
+async function uploadCourseFile(inputEl){
+  const file = inputEl && inputEl.files && inputEl.files[0];
+  if (!file) return;
+  if (!S.token) return toast('请先登录', 'info');
+  toast('正在上传并解析：' + file.name, 'info');
+  try {
+    const headers = {};
+    if (S.token) headers.Authorization = 'Bearer ' + S.token;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(S.apiBase.replace(/\/$/, '') + '/api/courses/' + S.courseId + '/files', {
+      method: 'POST',
+      headers,
+      body: fd,
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (res.ok) {
+      const indexed = Number(data.indexed_chunks || 0);
+      const chunks = Number(data.chunks || 0);
+      toast('上传成功' + (chunks ? '，切片 ' + chunks + ' 条' : '') + (indexed ? '，已向量化 ' + indexed + ' 条' : '，知识库正在更新'), 'success');
+      _pollKnowledgeBaseChunks(6);
+      return;
+    }
+    toast((data.detail || data.message || '上传失败') + (res.status === 403 ? '（可能需要教师权限）' : ''), 'info');
+  } catch (e) {
+    toast(e.message || '上传失败', 'info');
+  } finally {
+    if (inputEl) inputEl.value = '';
+  }
+}
+
+async function loadLearningPath(){
+  const el = document.getElementById('page-learning-path');
+  if (!el) return;
+  el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载学习路径中...</div>';
+  const topic = S.pendingStudyTopic || (document.getElementById('chat-input') || {}).value?.trim() || '当前学习主题';
+  try {
+    let plan = S.pendingStudyPlan || {};
+    if (!plan || !plan.steps) {
+      const r = await api('/api/app/generate', {
+        method: 'POST',
+        body: JSON.stringify({ course_id: S.courseId, resource_type: 'study_plan', topic })
+      });
+      const d = r.ok ? unwrapApi(r) : {};
+      plan = d.study_plan || {};
+      S.pendingStudyPlan = plan;
+    }
+    const steps = Array.isArray(plan.steps) ? plan.steps : [];
+    const body = steps.length ? steps.map((s, i) =>
+      '<div class="course-card"><h4>步骤 ' + (i + 1) + ' · ' + esc(s.title || s.name || '学习步骤') + '</h4><div class="course-meta"><span>' + esc(s.description || s.detail || '') + '</span></div>' +
+      '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'lecture_doc\', ' + JSON.stringify(s.title || topic) + ')">生成讲义</button><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'quiz\', ' + JSON.stringify(s.title || topic) + ')">配套练习</button></div></div>'
+    ).join('') : '<div class="empty-state"><div class="empty-icon">🗺️</div><p>暂无学习路径</p><p style="font-size:11px;color:var(--gray-400)">先在会话中心提问，或从错题本生成复习路径</p><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="navTo(\'assistant\')">去提问</button></div>';
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习路径 · ' + esc(plan.title || topic) + '</h3><button class="btn btn-sm btn-outline" onclick="S.pendingStudyPlan=null;loadLearningPath()">🔄 重新生成</button></div>' + body + '</div>';
+  } catch (e) {
+    el.innerHTML = '<div class="error-card"><div class="err-title">学习路径加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+async function bookmarkResource(resourceId, title){
+  if (!resourceId) return toast('资源 ID 无效', 'info');
+  try {
+    const r = await api('/api/analytics/bookmarks', {
+      method: 'POST',
+      body: JSON.stringify({ resource_id: resourceId, title: title || resourceId })
+    });
+    if (r.ok) {
+      toast('已收藏', 'success');
+      return;
+    }
+    toast((r.data && r.data.detail) || '收藏失败', 'info');
+  } catch (e) {
+    toast(e.message || '收藏失败', 'info');
+  }
+}
+
+async function shareResource(resourceId, title){
+  if (!S.token) return toast('分享链接需登录后在本页下载', 'info');
+  toast('请在资源中心点击「下载」获取文件（需登录）', 'info');
+}
+
+async function restoreProfileVersion(versionId){
+  if (!versionId) return;
+  try {
+    const r = await api('/api/profiles/history/' + versionId + '/restore', { method: 'POST' });
+    if (r.ok) {
+      toast('画像已回滚', 'success');
+      loadProfileCenter();
+      return;
+    }
+    toast((r.data && r.data.detail) || '回滚失败', 'info');
+  } catch (e) {
+    toast(e.message || '回滚失败', 'info');
   }
 }
 
@@ -542,31 +1598,90 @@ window.loadResourceCenter = loadResourceCenter;
 window.loadLearningReportPage = loadLearningReportPage;
 window.loadWrongBook = loadWrongBook;
 window.loadSettings = loadSettings;
+window.loadProfileCenter = loadProfileCenter;
+window.restoreProfileVersion = restoreProfileVersion;
+window.doLogin = doLogin;
+window.doRegister = doRegister;
+window.saveLlmConfig = saveLlmConfig;
+window.testLlmConnection = testLlmConnection;
+window.onLlmProviderChange = onLlmProviderChange;
+window.uploadCourseFile = uploadCourseFile;
 window.loadCourses = loadCourses;
+window.selectCourse = selectCourse;
+window.createCoursePrompt = createCoursePrompt;
+window.loadKnowledgeBase = loadKnowledgeBase;
+window.buildCourseIndex = buildCourseIndex;
+window.loadLearningPath = loadLearningPath;
+window.bookmarkResource = bookmarkResource;
+window.shareResource = shareResource;
+window.onSessionSelect = onSessionSelect;
 window.loadAssistant = loadAssistant;
+window.quickGenerateFromChat = quickGenerateFromChat;
+window.loadArtifactPreview = loadArtifactPreview;
+window.downloadAuthFile = downloadAuthFile;
+window.submitQuizAnswer = submitQuizAnswer;
+window.joinReviewPlan = joinReviewPlan;
 window.loadGenerator = loadGenerator;
+window.generateResources = generateResources;
+window.extractProfileFromDialogue = extractProfileFromDialogue;
+window.confirmProfile = confirmProfile;
 window.createNewSession = createNewSession;
 window.sendQuestion = sendQuestion;
 window._sendQuestion = sendQuestion;
 window._quickGenerate = function(type){
-  navTo('generator');
-  toast('已切换到资源生成中心，请选择：' + type, 'info');
+  const input = document.getElementById('chat-input');
+  const topic = input ? input.value.trim() : '';
+  quickGenerateFromChat(type, topic || '当前学习主题');
 };
 window._avatarSpeakAnswer = function(){
-  navTo('assistant');
-  toast('已切回会话中心，语音讲解功能稍后开放', 'info');
+  if (!S.lastAnswer) {
+    const lastAgent = document.querySelector('#chat-messages .msg-bubble.agent:last-child .msg-content');
+    if (lastAgent) S.lastAnswer = lastAgent.textContent || '';
+  }
+  if (!S.lastAnswer) {
+    navTo('assistant');
+    return toast('请先在会话中心提问并获得回答', 'info');
+  }
+  _speakText(S.lastAnswer, '最新回答');
 };
 window._avatarSpeakPath = function(){
-  navTo('learning-path');
-  toast('已切换到学习计划页，便于讲解学习路径', 'info');
+  const steps = document.querySelectorAll('#page-learning-path .course-card h4');
+  const text = steps.length
+    ? Array.from(steps).map(function(n){ return n.textContent; }).join('。')
+    : '请先在学习路径页生成个性化复习步骤。';
+  _speakText(text, '学习路径');
 };
-window._avatarStop = function(){ toast('已停止讲解', 'info'); };
-window._runFullDemo = function(){
-  _startCompetition();
+window._avatarStop = function(){
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  const statusEl = document.getElementById('avatar-status-text');
+  if (statusEl) statusEl.textContent = '已停止讲解';
+  toast('已停止讲解', 'info');
+};
+window._toggleDemoMode = function(){
+  S.demoMode = !S.demoMode;
+  const btn = document.getElementById('demo-mode-btn');
+  if (btn) btn.textContent = S.demoMode ? '演示模式 ✓' : '演示模式';
+  toast(S.demoMode ? '演示模式已开启：问答后将自动生成思维导图' : '演示模式已关闭', 'info');
+};
+window._runFullDemo = async function(){
+  S.demoMode = true;
+  const btn = document.getElementById('demo-mode-btn');
+  if (btn) btn.textContent = '演示模式 ✓';
+  navTo('assistant');
+  const input = document.getElementById('chat-input');
+  const demoQ = (window.DEMO_PAYLOAD && window.DEMO_PAYLOAD.question) ||
+    '我在学习人工智能导论，机器学习基础一般，容易混淆过拟合和欠拟合。请帮我理解过拟合和正则化的关系。';
+  if (input) input.value = demoQ;
+  toast('演示问题已填入，正在发起问答...', 'info');
+  await sendQuestion();
+  if (S.demoMode) {
+    setTimeout(function(){ loadArtifactPreview('mindmap', demoQ); }, 600);
+    setTimeout(function(){ loadArtifactPreview('quiz', demoQ); }, 1200);
+  }
 };
 
 function startCompetitionView(){
-  _startCompetition();
+  navTo('assistant');
 }
 
 window.addEventListener('DOMContentLoaded', bootstrap);

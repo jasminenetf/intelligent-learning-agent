@@ -34,8 +34,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Intelligent Learning Agent",
-    description="高等教育个性化学习资源多智能体系统",
+    title="智学·多智能体",
+    description="面向高校与培训场景的智能学习工作台，支持课程管理、知识库问答、画像构建、学习路径与资源生成。",
     version="0.1.0",
     lifespan=lifespan,
 )

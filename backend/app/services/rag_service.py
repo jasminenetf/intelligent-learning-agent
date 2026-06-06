@@ -1,8 +1,11 @@
 """RAG service: build indices and search across course chunks."""
 
 import logging
+import os
 from typing import Optional
 
+import chromadb
+from chromadb.config import Settings as ChromaSettings
 from sqlmodel import Session, select
 
 from app.core.config import settings
@@ -15,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _embedding_service: Optional[EmbeddingService] = None
 _vector_store: Optional[VectorStoreService] = None
+_chroma_collection = None
 
 MAX_TOP_K = 20
 
@@ -98,13 +102,33 @@ def search_all_courses(query: str, top_k: int, session: Session) -> dict:
     }
 
 
+def _lite_vector_count() -> int:
+    """Count vectors without loading the embedding model (fast dashboard path)."""
+    global _chroma_collection
+    if _chroma_collection is None:
+        os.makedirs(settings.CHROMA_PERSIST_DIR, exist_ok=True)
+        client = chromadb.PersistentClient(
+            path=settings.CHROMA_PERSIST_DIR,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+        _chroma_collection = client.get_or_create_collection(
+            name=settings.CHROMA_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+    return int(_chroma_collection.count())
+
+
 def get_rag_status() -> dict:
     """Return RAG component status."""
-    _, vs = _get_services()
+    try:
+        vector_count = _lite_vector_count()
+    except Exception as exc:
+        logger.warning("RAG status count failed: %s", exc)
+        vector_count = 0
     return {
         "collection": settings.CHROMA_COLLECTION_NAME,
         "persist_dir": settings.CHROMA_PERSIST_DIR,
         "embedding_provider": settings.EMBEDDING_PROVIDER,
         "embedding_dim": settings.EMBEDDING_DIM,
-        "vector_count": vs.count(),
+        "vector_count": vector_count,
     }

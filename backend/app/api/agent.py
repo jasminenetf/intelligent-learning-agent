@@ -35,6 +35,7 @@ def api_tutor(
     )
 
     llm = get_llm_provider()
+    answer_text = result.get("answer", "")
     return TutorResponse(
         course_id=course_id,
         course_name=course.name or "",
@@ -51,11 +52,11 @@ def api_tutor(
             }
             for c in result.get("retrieved_chunks", [])
         ],
-        draft_answer=result.get("draft_answer", ""),
-        verified_answer=result.get("verified_answer", ""),
+        draft_answer=answer_text,
+        verified_answer=answer_text,
         citations=result.get("citations", []),
-        verification=result.get("verification", {}),
-        agent_trace=result.get("agent_trace", []),
+        verification={"verifier_score": result.get("verifier_score", 0.0)},
+        agent_trace=result.get("agent_traces", []),
         provider=llm.provider,
         model=llm.model,
     )
