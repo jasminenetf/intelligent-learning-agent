@@ -83,6 +83,13 @@ def main() -> int:
     else:
         print(f"[PASS] POST /api/settings/test-llm unauthenticated -> {st}")
 
+    # deprecated demo endpoint should not be public
+    st, _ = post("/api/app/run-demo", {})
+    if st not in (401, 410):
+        fails.append(f"run-demo unauthenticated expected 401/410 got {st}")
+    else:
+        print(f"[PASS] POST /api/app/run-demo unauthenticated -> {st}")
+
     # register + login + dashboard
     import time
 
@@ -117,6 +124,35 @@ def main() -> int:
             fails.append(f"student create course expected 403 got {st}")
         else:
             print("[PASS] POST /api/courses student -> 403")
+
+        st, _ = post("/api/app/run-demo", {}, token)
+        if st != 410:
+            fails.append(f"run-demo authenticated expected 410 got {st}")
+        else:
+            print("[PASS] POST /api/app/run-demo authenticated -> 410")
+
+        st, _ = get("/api/resources/download/../../x", token)
+        if st not in (400, 404):
+            fails.append(f"invalid resource id expected 400/404 got {st}")
+        else:
+            print(f"[PASS] GET /api/resources/download/../../x -> {st}")
+
+        st, resources = get("/api/resources/generated", token)
+        if st != 200:
+            fails.append(f"generated resources expected 200 got {st}")
+        elif resources.get("ok") is not True:
+            fails.append("generated resources missing ok:true")
+        else:
+            files = resources.get("files") or resources.get("data", {}).get("files", [])
+            print(f"[PASS] GET /api/resources/generated files={len(files)}")
+
+        st, report = get("/api/app/learning-report", token)
+        if st != 200:
+            fails.append(f"learning report expected 200 got {st}")
+        elif report.get("ok") is not True or "data" not in report:
+            fails.append("learning report missing ok/data")
+        else:
+            print("[PASS] GET /api/app/learning-report")
 
         try:
             st, dash = get("/api/app/dashboard", token, timeout=30)

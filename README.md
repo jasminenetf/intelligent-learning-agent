@@ -7,7 +7,7 @@
 
 <h1 align="center">智学·多智能体</h1>
 <h3 align="center">Intelligent Learning Agent</h3>
-<p align="center">面向高校与培训场景的智能学习工作台</p>
+<p align="center">课程级 AI 学习工作台：资料理解、问答辅导、资源生成、错题复盘与学习路径推荐</p>
 
 ---
 
@@ -28,6 +28,15 @@
 ### 技术栈
 
 `FastAPI` `SQLModel` `ChromaDB` `LangGraph` `DeepSeek` `sentence-transformers` `python-pptx`
+
+### 推荐升级方向
+
+- 后端主干：`FastAPI` + `PostgreSQL` + `pgvector`
+- 异步任务：`Redis` + `Celery/RQ`
+- 检索增强：混合检索 + rerank
+- 前端工作台：`Next.js` + `React` + `TypeScript` + `shadcn/ui`
+- 存储与文件：`MinIO` / `S3`
+- 观测与评测：`OpenTelemetry` + tracing / eval
 
 ---
 

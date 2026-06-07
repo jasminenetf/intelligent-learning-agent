@@ -60,6 +60,7 @@ def api_generate_resources(
 def api_download_resource(
     resource_id: str,
     user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
 ):
     """Download a generated resource file by resource_id.
 
@@ -70,14 +71,24 @@ def api_download_resource(
         raise HTTPException(status_code=400, detail="invalid resource_id format")
 
     meta = get_file_meta(resource_id)
-    if not meta:
+    artifact = session.exec(
+        select(ResourceArtifact).where(
+            ResourceArtifact.download_resource_id == resource_id,
+            ResourceArtifact.user_id == int(user.id) if user.id else 0,
+        )
+    ).first()
+    if not meta and not artifact:
         raise HTTPException(status_code=404, detail="resource not found")
+    if meta and not artifact:
+        # Legacy registry files have no owner metadata. Restrict them to admins to avoid cross-user leakage.
+        if user.role != "admin":
+            raise HTTPException(status_code=403, detail="resource ownership required")
 
     content = get_file_content(resource_id)
     if content is None:
         raise HTTPException(status_code=404, detail="resource file not found on disk")
 
-    filename = meta.get("original_filename", "download.pptx")
+    filename = (meta or {}).get("original_filename") or (artifact.title if artifact else None) or "download.pptx"
     # URL-encode non-ASCII filename for Content-Disposition
     import urllib.parse
     safe_name = urllib.parse.quote(filename, safe="")
@@ -104,7 +115,7 @@ def api_list_generated_files(
         .order_by(ResourceArtifact.created_at.desc(), ResourceArtifact.id.desc())
         .limit(50)
     ).all()
-    files = list_generated_files(limit=50)
+    files = list_generated_files(limit=50) if user.role == "admin" else []
     artifact_items = [
         {
             "resource_id": a.download_resource_id or a.artifact_id,

@@ -188,6 +188,8 @@ def api_restore_profile_version(
         if hasattr(profile, field):
             setattr(profile, field, _json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else value)
     profile.profile_version = version.version
+    profile.profile_source = "history_restore"
+    profile.updated_at = datetime.now(timezone.utc)
     session.add(profile)
     session.commit()
     session.refresh(profile)

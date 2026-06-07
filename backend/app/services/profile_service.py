@@ -219,16 +219,17 @@ def _merge_profile(profile: StudentProfile, extracted: dict, source: str = "dial
     profile.last_extracted_at = datetime.now(timezone.utc)
 
     if session is not None:
-        new_snapshot = _profile_snapshot(profile)
-        session.add(StudentProfileVersion(
-            profile_id=int(profile.id) if profile.id else 0,
-            version=int(profile.profile_version or 1),
-            snapshot_json=json.dumps(new_snapshot, ensure_ascii=False),
-            trigger_source=source,
-            trigger_text=trigger_text,
-            confidence=float(profile.profile_confidence or 0.0),
-        ))
-        _append_change_logs(int(profile.id) if profile.id else 0, old_snapshot, new_snapshot, source, trigger_text, session)
+        if profile.id is not None:
+            new_snapshot = _profile_snapshot(profile)
+            session.add(StudentProfileVersion(
+                profile_id=int(profile.id),
+                version=int(profile.profile_version or 1),
+                snapshot_json=json.dumps(new_snapshot, ensure_ascii=False),
+                trigger_source=source,
+                trigger_text=trigger_text,
+                confidence=float(profile.profile_confidence or 0.0),
+            ))
+            _append_change_logs(int(profile.id), old_snapshot, new_snapshot, source, trigger_text, session)
 
     return profile
 
