@@ -152,7 +152,38 @@ def main() -> int:
         elif report.get("ok") is not True or "data" not in report:
             fails.append("learning report missing ok/data")
         else:
-            print("[PASS] GET /api/app/learning-report")
+            report_data = report.get("data", {})
+            if "mastery_overview" not in report_data:
+                fails.append("learning report missing mastery_overview")
+            elif "mastery_items" not in report_data:
+                fails.append("learning report missing mastery_items")
+            else:
+                print("[PASS] GET /api/app/learning-report includes mastery fields")
+
+        st, quiz = post(
+            "/api/app/quiz/submit",
+            {
+                "course_id": 1,
+                "topic": "P0 Smoke 知识点",
+                "question_text": "什么是过拟合？",
+                "selected_answer": "A",
+                "correct_answer": "B",
+                "is_correct": False,
+                "knowledge_point": "P0 Smoke 知识点",
+                "explanation": "用于验证掌握度更新链路",
+            },
+            token,
+        )
+        if st not in (200, 404):
+            fails.append(f"quiz submit expected 200/404 got {st}")
+        elif st == 200:
+            quiz_data = quiz.get("data", quiz)
+            if "mastery" not in quiz_data:
+                fails.append("quiz submit missing mastery")
+            else:
+                print("[PASS] POST /api/app/quiz/submit includes mastery")
+        else:
+            print("[SKIP] POST /api/app/quiz/submit no course_id=1")
 
         try:
             st, dash = get("/api/app/dashboard", token, timeout=30)
