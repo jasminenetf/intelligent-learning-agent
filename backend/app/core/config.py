@@ -1,7 +1,19 @@
 """Core configuration module."""
 
+from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _resolve_path(value: str) -> str:
+    """Resolve a path relative to the repository root when needed."""
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str((PROJECT_ROOT / path).resolve())
 
 
 class Settings(BaseSettings):
@@ -16,10 +28,6 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
-
-    # Spark LLM (placeholder)
-    SPARK_APP_ID: str = ""
-    SPARK_API_SECRET: str = ""
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma"
@@ -79,3 +87,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+settings.DATABASE_URL = _resolve_path(settings.DATABASE_URL.replace("sqlite:///./", "", 1)) if settings.DATABASE_URL.startswith("sqlite:///./") else settings.DATABASE_URL
+settings.CHROMA_PERSIST_DIR = _resolve_path(settings.CHROMA_PERSIST_DIR)
+settings.GENERATED_DIR = _resolve_path(settings.GENERATED_DIR)

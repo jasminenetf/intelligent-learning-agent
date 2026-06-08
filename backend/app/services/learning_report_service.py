@@ -87,6 +87,18 @@ def build_learning_report(
         "recommended_resources": recommended,
         "next_actions": next_actions,
         "profile_summary": _profile_summary(profile),
+        "mastery_overview": mastery_overview,
+        "mastery_items": [
+            {
+                "knowledge_point": item.knowledge_point,
+                "mastery_score": item.mastery_score,
+                "attempt_count": item.attempt_count,
+                "correct_count": item.correct_count,
+                "wrong_count": item.wrong_count,
+                "recommended_action": item.recommended_action,
+            }
+            for item in mastery_items
+        ],
         "profile_updated": bool(profile and profile.weak_points and profile.weak_points != "[]"),
     }
 

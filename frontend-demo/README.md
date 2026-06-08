@@ -18,12 +18,11 @@ frontend-demo/
 
 ```bash
 # 1. 启动后端
-cd /home/zhang/projects/intelligent-learning-agent/backend
-source ../.venv/bin/activate
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd C:\Users\zhang\Desktop\智能学习\backend
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # 2. 启动前端（新终端）
-cd /home/zhang/projects/intelligent-learning-agent/frontend-demo
+cd C:\Users\zhang\Desktop\智能学习\frontend-demo
 python -m http.server 5173
 
 # 3. 浏览器打开
@@ -45,7 +44,7 @@ python -m http.server 5173
 ## 用户流程
 
 1. 打开页面 → 自动检测连接
-2. 点击"演示账号登录" → 自动初始化
+2. 进入免登录 Demo → 自动初始化课程和系统状态
 3. 数据看板查看状态
 4. 学习助手：左侧提问 → 中间看资源 → 右侧看引用
 5. 资源生成：选类型 → 看进度 → 下载 PPT
@@ -55,12 +54,12 @@ python -m http.server 5173
 - 纯 HTML+CSS+JS，零构建工具
 - Mermaid 通过 CDN 加载（jsdelivr）
 - 使用 `/api/app/*` 聚合接口，不直接调用底层 API
-- JWT Token 保存在 localStorage
-- 不暴露 Token/Course ID/API Base 给用户
+- 当前答辩 Demo 支持免登录体验；正式认证为后续安全加固项
+- 不暴露 Course ID/API Base 给用户
 
 ## 设计原则
 
-- 用户不接触工程概念（Token, Course ID, API Base）
+- 用户不接触工程概念（Course ID, API Base）
 - 所有页面有内容，无大面积空白
 - 每个状态有下一步引导
 - 5 类资源有可视化展示区

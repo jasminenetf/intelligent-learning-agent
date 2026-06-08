@@ -43,45 +43,11 @@
     <div class="nav-item" data-page="profile" id="nav-profile">
       <span class="nav-icon">🎓</span><span>学习画像</span>
     </div>
-    <div class="nav-item" data-page="learning-path" id="nav-learning-path-2">
-      <span class="nav-icon">🗺️</span><span>学习计划</span>
-    </div>
     <div class="nav-item" data-page="settings" id="nav-settings">
       <span class="nav-icon">⚙️</span><span>账户与设置</span>
     </div>
     <div class="nav-item" data-page="knowledge" id="nav-knowledge">
       <span class="nav-icon">🧠</span><span>课程资料库</span>
-    </div>
-    <div class="nav-item" data-page="learning-path" id="nav-learning-path">
-      <span class="nav-icon">🗺️</span><span>学习路径</span>
-    </div>
-    <!-- Advanced divider -->
-    <div class="nav-divider" id="nav-advanced-toggle" onclick="_toggleAdvanced()">
-      <span class="nav-icon">🔧</span><span>高级功能 ▾</span>
-      <span style="font-size:9px;color:var(--gray-400);margin-left:auto">管理</span>
-    </div>
-    <div class="nav-advanced-group" id="nav-advanced-group" style="display:none">
-      <div class="nav-item nav-sub" data-page="dashboard">
-        <span class="nav-icon">📊</span><span>数据看板</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="assistant">
-        <span class="nav-icon">💬</span><span>学习助手</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="generator">
-        <span class="nav-icon">⚡</span><span>学习资源</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="courses">
-        <span class="nav-icon">📚</span><span>课程管理</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="knowledge">
-        <span class="nav-icon">🧠</span><span>课程资料库</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="learning-path">
-        <span class="nav-icon">🗺️</span><span>学习计划</span>
-      </div>
-      <div class="nav-item nav-sub" data-page="profile">
-        <span class="nav-icon">🎓</span><span>画像中心</span>
-      </div>
     </div>
   </nav>
   <div class="sidebar-footer" id="sidebar-footer">
@@ -96,12 +62,12 @@
     <div class="topbar-left">
       <span class="topbar-toggle" onclick="_toggleSidebar()">☰</span>
       <span class="topbar-course" id="topbar-course">未选择</span>
-      <span class="topbar-badge warn" id="topbar-badge">未登录</span>
+      <span class="topbar-badge ok" id="topbar-badge">免登录</span>
     </div>
     <div class="topbar-right">
       <span style="font-size:11px;color:var(--gray-400)" id="topbar-time"></span>
       <div class="topbar-user" id="topbar-user">
-        <button class="btn btn-sm btn-primary" onclick="navTo('settings')">登录 / 配置</button>
+        <button class="btn btn-sm btn-primary" onclick="navTo('settings')">配置 API</button>
       </div>
       <button class="btn btn-sm btn-outline" onclick="_logout()" style="display:none" id="btn-logout">退出</button>
     </div>

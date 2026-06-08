@@ -6,23 +6,20 @@
 
 ```bash
 # 终端1: 后端 (必须先启动)
-cd /home/zhang/projects/intelligent-learning-agent/backend
-source ../.venv/bin/activate
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd C:\Users\zhang\Desktop\智能学习\backend
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # 终端2: 前端
-cd /home/zhang/projects/intelligent-learning-agent/frontend-demo
+cd C:\Users\zhang\Desktop\智能学习\frontend-demo
 python -m http.server 5173
 # 浏览器: http://127.0.0.1:5173
 ```
 
 ---
 
-## 登录账号
+## 登录状态
 
-| 用户名 | 密码 | 角色 |
-|--------|------|------|
-| admin_ocr | admintest123 | admin |
+当前答辩 Demo 使用免登录体验。正式注册/登录和角色权限作为后续安全加固项，不作为当前演示依赖。
 
 ---
 
@@ -30,7 +27,7 @@ python -m http.server 5173
 
 `2` — 高等数学上（已有课程资料和 chunks）
 
-```bash
+```powershell
 # 确认课程存在
 curl http://127.0.0.1:8000/api/courses
 ```
@@ -39,25 +36,18 @@ curl http://127.0.0.1:8000/api/courses
 
 ## 演示前健康检查
 
-```bash
+```powershell
 # 1. 后端存活
 curl http://127.0.0.1:8000/health
 # → {"status":"ok"}
 
-# 2. DeepSeek 状态
-TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin_ocr","password":"admintest123"}' | jq -r .access_token)
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/llm/status
-# → is_mock必须为false, deepseek_configured为true
+# 2. 模型状态
+curl http://127.0.0.1:8000/api/settings/status
+# → 推荐显示 spark；无密钥时允许 deepseek/mock fallback 验证工程链路
 
 # 3. RAG 有数据
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/rag/status
+curl http://127.0.0.1:8000/api/app/bootstrap
 # → vector_count > 0
-
-# 4. 画像存在
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/profiles/me
-# → 返回 profile 对象
 ```
 
 ---
@@ -83,14 +73,10 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/profiles/me
 
 ## 应急方案
 
-### DeepSeek 超时
+### Spark / fallback 模型超时
 - 现象: 资源生成卡住超过30秒
-- 方案: 刷新页面，重试。如持续超时，用 mock 模式演示流程，口头说明真 LLM 能力
-- 检查: `curl http://127.0.0.1:8000/api/llm/status`
-
-### Token 过期
-- 现象: API 返回 401
-- 方案: 重新点击"登录"按钮
+- 方案: 刷新页面，重试。如持续超时，用 mock 模式演示流程，口头说明 Spark 为主引擎，fallback 用于工程稳定性
+- 检查: `curl http://127.0.0.1:8000/api/settings/status`
 
 ### course_id 不存在
 - 现象: 返回 404
@@ -117,17 +103,13 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/profiles/me
 
 ### 后端端口被占用
 - 现象: `address already in use`
-- 方案: `fuser -k 8000/tcp` 然后重启
+- 方案: 执行 `停止智能学习Agent.bat`，或在任务管理器中结束占用 8000 端口的 Python 进程，然后重启
 
 ---
 
 ## 演示后清理
 
-```bash
-# 停止服务
-Ctrl+C (两个终端各一次)
-
-# 确认端口释放
-fuser 8000/tcp
-fuser 5173/tcp
+```powershell
+cd C:\Users\zhang\Desktop\智能学习
+.\停止智能学习Agent.bat
 ```

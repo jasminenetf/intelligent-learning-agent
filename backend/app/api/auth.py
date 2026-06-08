@@ -1,42 +1,41 @@
-"""Authentication routes: register, login, me."""
+"""Authentication compatibility routes for the local no-login demo.
 
-from typing import Optional
+The current product target is "double-click, fill an API key, use every
+feature".  All auth dependencies therefore resolve to one local demo admin
+user.  The old login/register endpoints remain as compatibility shims for
+scripts and older frontend code, but the UI no longer requires them.
+"""
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, Request
+from sqlmodel import Session
+from sqlmodel import select
 
 from app.core.database import get_session
-from app.core.security import (
-    create_access_token,
-    decode_access_token,
-    get_password_hash,
-    verify_password,
-)
 from app.models.user import User
-from app.schemas.auth import (
-    LoginRequest,
-    RegisterRequest,
-    TokenResponse,
-    UserRead,
-)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-_bearer_scheme = HTTPBearer()
+
+DEMO_USERNAME = "local_demo_admin"
+DEMO_PASSWORD_HINT = "no-login"
 
 
-@router.post("/register", response_model=UserRead)
-def register(body: RegisterRequest, session: Session = Depends(get_session)):
-    """Register a new user."""
-    existing = session.exec(select(User).where(User.username == body.username)).first()
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="username already exists")
+def _get_or_create_demo_user(session: Session) -> User:
+    user = session.exec(select(User).where(User.username == DEMO_USERNAME)).first()
+    if user:
+        if user.role != "admin" or not user.is_active:
+            user.role = "admin"
+            user.is_active = True
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+        return user
 
     user = User(
-        username=body.username,
-        email=body.email,
-        hashed_password=get_password_hash(body.password),
-        role="student",
+        username=DEMO_USERNAME,
+        email="local-demo@example.invalid",
+        hashed_password="no-login-demo-user",
+        role="admin",
+        is_active=True,
     )
     session.add(user)
     session.commit()
@@ -44,74 +43,56 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, session: Session = Depends(get_session)):
-    """Authenticate and return a JWT access token."""
-    user = session.exec(select(User).where(User.username == body.username)).first()
-    if not user or not verify_password(body.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+def _user_payload(user: User) -> dict:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active,
+        "authenticated": True,
+        "mode": "no-login-demo",
+    }
 
-    token = create_access_token(data={"sub": str(user.id)})
-    return TokenResponse(access_token=token)
+
+@router.post("/register")
+def register(session: Session = Depends(get_session)):
+    user = _get_or_create_demo_user(session)
+    return {
+        "ok": True,
+        "access_token": "local-demo-token",
+        "token_type": "bearer",
+        "user": _user_payload(user),
+        "message": "No login required. A local demo admin user is active.",
+    }
+
+
+@router.post("/login")
+def login(session: Session = Depends(get_session)):
+    user = _get_or_create_demo_user(session)
+    return {
+        "ok": True,
+        "access_token": "local-demo-token",
+        "token_type": "bearer",
+        "user": _user_payload(user),
+        "message": "No login required. A local demo admin user is active.",
+    }
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+    request: Request,
     session: Session = Depends(get_session),
 ) -> User:
-    """Dependency: extract and validate JWT token, return authenticated User."""
-    payload = decode_access_token(credentials.credentials)
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
-
-    user = session.get(User, int(user_id))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
-    return user
-
-
-from fastapi import Request
-
-_optional_bearer = HTTPBearer(auto_error=False)
+    return _get_or_create_demo_user(session)
 
 
 def get_current_user_optional(
     request: Request,
     session: Session = Depends(get_session),
-) -> Optional[User]:
-    """Dependency: try to authenticate, fall back to None (guest).
-
-    Reads Authorization: Bearer <token> header if present.
-    Returns authenticated User on success, None on any failure.
-    Caller handles guest behavior.
-    """
-    # Try Authorization header
-    auth = request.headers.get("Authorization", "")
-    if not auth.lower().startswith("bearer "):
-        return None
-
-    token = auth[7:]  # strip "Bearer "
-    payload = decode_access_token(token)
-    if payload is None:
-        return None
-
-    user_id = payload.get("sub")
-    if user_id is None:
-        return None
-
-    try:
-        user = session.get(User, int(user_id))
-    except (ValueError, TypeError):
-        return None
-
-    return user if user is not None else None
+) -> User:
+    return _get_or_create_demo_user(session)
 
 
-@router.get("/me", response_model=UserRead)
-def get_me(current_user: User = Depends(get_current_user)):
-    """Return the currently authenticated user."""
-    return current_user
+@router.get("/me")
+def get_me(user: User = Depends(get_current_user)):
+    return _user_payload(user)

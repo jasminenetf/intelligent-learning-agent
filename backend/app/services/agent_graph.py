@@ -74,13 +74,42 @@ class GraphState(TypedDict):
 
 import time
 
-def _trace_entry(agent_name: str, status: str, message: str = "") -> dict:
+def _trace_entry(agent_name: str, status: str, message: str = "", *, phase: str | None = None, output: Any | None = None) -> dict:
+    """Create a normalized multi-agent trace entry.
+
+    Keep legacy fields (agent_name/message/timestamp) while adding the
+    canonical schema consumed by the product workbench frontend and smoke tests.
+    """
+    ts = int(time.time())
+    normalized_phase = phase or _infer_trace_phase(agent_name, status)
     return {
+        "agent": agent_name,
         "agent_name": agent_name,
+        "phase": normalized_phase,
         "status": status,
+        "summary": message,
         "message": message,
-        "timestamp": int(time.time()),
+        "latency_ms": 0,
+        "output": output or {},
+        "timestamp": ts,
     }
+
+
+def _infer_trace_phase(agent_name: str, status: str) -> str:
+    name = (agent_name or "").lower()
+    if "profile" in name or "insight" in name:
+        return "profiling"
+    if "informer" in name or "retriever" in name or "rag" in name:
+        return "retrieving"
+    if "tutor" in name or "lecture" in name:
+        return "generating"
+    if "verifier" in name:
+        return "verifying"
+    if "practice" in name or "resource" in name:
+        return "building_resources"
+    if status == "failed":
+        return "failed"
+    return "planning"
 
 def _detect_knowledge_level(question: str) -> str:
     q = question.lower()

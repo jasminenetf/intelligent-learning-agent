@@ -101,6 +101,46 @@
 - **保留**：PPT、Presenton、SQLAdmin、LobeChat 后续阶段按开源成品优先原则处理
 - **影响**：resource_renderer.py, resource_generator.py, resources API
 
+## 决策 015：答辩 Demo 前端
+- **日期**：2026-06-08
+- **决策**：当前答辩 Demo 主界面使用 `frontend-demo/` 静态 HTML/CSS/JS 工作台。
+- **原因**：当前代码已形成完整学习闭环页面，启动成本低，演示可控；LobeChat 暂不作为答辩主界面。
+- **保留**：LobeChat 可作为后续集成方向，不删除技术储备。
+- **影响**：frontend-demo/, README.md, RUNBOOK.md
+
+## 决策 016：推理引擎 fallback 策略
+- **日期**：2026-06-08
+- **决策**：Spark LLM 作为赛题主引擎；DeepSeek 作为开发/演示备用；Mock 作为离线兜底。
+- **原因**：必须体现科大讯飞能力，同时保证本地演示在缺少密钥、网络波动或模型失败时仍可验证工程闭环。
+- **约束**：答辩材料中应明确 Spark 是主推理引擎，fallback 仅用于工程稳定性。
+- **影响**：llm_provider.py, settings API, README.md
+
+## 决策 017：PPT 生成实现
+- **日期**：2026-06-08
+- **决策**：当前 PPT 生成使用后端 `python-pptx`，生成文件通过 `/api/resources/download/{resource_id}` 下载。
+- **原因**：当前实现已可运行，避免引入 Presenton 容器复杂度。
+- **保留**：Presenton 作为 P2/P3 可选升级。
+- **影响**：ppt_service.py, generated_file_storage.py, resources API
+
+## 决策 018：部署与启动方式
+- **日期**：2026-06-08
+- **决策**：答辩与本地开发优先使用 Windows 启停脚本；Docker Compose 当前只编排 PostgreSQL / Redis / MinIO 基础设施。
+- **原因**：当前 `docker-compose.yml` 未编排后端和前端，完整容器化仍是后续项。
+- **影响**：docker-compose.yml, RUNBOOK.md, README.md
+
+## 决策 019：认证状态
+- **日期**：2026-06-08
+- **决策**：当前答辩 Demo 允许免登录体验，旧注册/登录接口仅保留兼容入口；正式认证和角色权限作为后续安全加固。
+- **原因**：当前前端主流程以免登录演示为主，便于答辩稳定展示；真实用户体系需要单独验收。
+- **影响**：auth.py, frontend-demo/app.js, TASKS.md
+
+## 决策 020：一键启动与功能全开放 Demo 模式
+- **日期**：2026-06-08
+- **决策**：Windows 一键启动脚本默认启动轻量 Demo 后端 `app.demo_main:app` 到 8010，前端到 5173；启动前自动清理旧端口。完整后端认证依赖也统一返回本地 Demo 管理员用户。
+- **原因**：当前交付目标是双击启动、填写 API Key 后立即使用，避免登录、角色、权限和端口残留影响演示。
+- **约束**：该模式仅用于本地 Demo/答辩；生产环境需要重新启用正式认证、权限和密钥管理。
+- **影响**：启动智能学习Agent.bat, 停止智能学习Agent.bat, auth.py, demo_main.py, frontend-demo/app.js
+
 ---
 
 ## 变更记录模板

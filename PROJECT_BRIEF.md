@@ -1,8 +1,17 @@
 # 项目简介 — 高等教育个性化学习资源多智能体系统
 
 ## 一句话定义
-面向高校的个性化学习资源生成与辅导系统，多智能体架构 + Agentic RAG，
-科大讯飞星火大模型为核心推理引擎。
+面向高校的个性化学习资源生成与辅导系统，多智能体架构 + Agentic RAG。
+答辩版以科大讯飞星火大模型为主推理引擎，同时保留 DeepSeek / Mock 作为开发与演示 fallback，确保本地 Demo 可运行。
+
+## 当前实现状态（2026-06-08 对齐）
+- 当前前端为 `frontend-demo/` 静态学习工作台，不再使用 LobeChat 作为答辩 Demo 主界面。
+- 当前后端为 FastAPI，入口 `backend/app/main.py`，聚合接口集中在 `/api/app/*`。
+- 当前多智能体链路由 LangGraph 实现，核心文件 `backend/app/services/agent_graph.py`。
+- 当前向量库为 ChromaDB 本地持久化目录 `data/chroma/`。
+- 当前 PPT 由 `python-pptx` 在后端生成并通过下载接口提供，不依赖 Presenton 容器。
+- 当前 `docker-compose.yml` 主要编排 PostgreSQL / Redis / MinIO 基础设施；后端和前端推荐本地脚本启动。
+- 当前答辩 Demo 支持免登录体验；正式注册/登录、角色权限作为 P1/P2 安全加固项继续跟进。
 
 ## MVP 范围（不可随意扩大）
 
@@ -12,8 +21,8 @@
 3. Agentic RAG 防幻觉回答（Informer + Verifier）
 4. 思维导图生成（Mermaid.js）
 5. 学生画像构建（对话隐式提取，6维）
-6. PPT 生成（Presenton）
-7. 用户注册/登录、角色管理
+6. PPT 生成（当前使用 python-pptx；Presenton 作为后续可选集成）
+7. 答辩 Demo 免登录可用；正式用户注册/登录、角色管理进入安全加固项
 
 ### 明确不做（后期扩展）
 - 高保真视频生成（Seedance 2.0）
@@ -24,22 +33,22 @@
 ## 技术栈（不可随意更换）
 | 层 | 技术 | 原因 |
 |----|------|------|
-| 前端 | LobeChat | 原生 Spark API 集成，零前端代码 |
+| 前端 | frontend-demo 静态工作台 | 答辩可控、无需构建、覆盖完整学习闭环 |
 | 后端 | FastAPI (Python) | 异步、与 LangChain 生态兼容 |
 | Agent 编排 | LangGraph | 图结构可控，适合教学流程 |
-| 推理引擎 | 科大讯飞 Spark LLM | 赛题强制要求 |
+| 推理引擎 | 科大讯飞 Spark LLM + DeepSeek/Mock fallback | Spark 满足赛题要求，fallback 保证开发和演示稳定 |
 | 向量库 | ChromaDB | 轻量、易部署 |
 | 关系库 | PostgreSQL / SQLite | 用户、课程、记录 |
 | 图库 | Neo4j（可选） | 知识图谱、画像关系 |
-| 多模态 | Mermaid.js + Presenton | 思维导图 + PPT |
-| 部署 | Docker Compose | 一键启动 |
+| 多模态 | Mermaid.js + python-pptx | 思维导图 + PPT 下载闭环 |
+| 部署 | 本地脚本 + Docker Compose 基础设施 | 答辩本地稳定运行，数据库/缓存/对象存储可容器化 |
 
 ## 核心约束
 - 必须使用科大讯飞相关工具（Spark LLM、iFlyCode）
 - 必须体现"多智能体"架构
 - 开源项目使用需标注来源和协议
 - 必须防幻觉：回答需带出处引用
-- MVP 阶段不做视频、不做语音
+- MVP 阶段不做高保真视频生成；教学脚本/浏览器语音朗读只作为 Demo 辅助，不等同于视频/语音产品能力
 
 ## 5 个核心 Agent
 | Agent | 职责 |

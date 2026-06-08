@@ -27,7 +27,18 @@
 
 ### 技术栈
 
-`FastAPI` `SQLModel` `ChromaDB` `LangGraph` `DeepSeek` `sentence-transformers` `python-pptx`
+`FastAPI` `SQLModel` `ChromaDB` `LangGraph` `DeepSeek / Spark` `sentence-transformers` `python-pptx` `sqladmin`
+
+### 比赛交付亮点
+
+| 亮点 | 说明 |
+|------|------|
+| 多智能体协作 | Planner / Retriever / Profile / Generator / Verifier / ResourceBuilder 形成可追踪链路 |
+| RAG 防幻觉 | 回答返回引用、grounding 分数、风险等级、无依据提示和内容安全状态 |
+| 个性化资源包 | 围绕一个主题聚合讲义、导图、题库、PPT、拓展阅读、视频脚本 |
+| 学习效果评价 | 测验结果写入知识点掌握度，学习报告展示掌握度、强弱项与推荐动作 |
+| 学习闭环工作台 | 首页串联画像、问答、资源生成、测验、错题复盘、学习路径和报告 |
+| P0 Smoke 回归 | `scripts/verify_p0_smoke.py` 覆盖启动、权限、报告、掌握度、资源中心、问答可信链路 |
 
 ### 推荐升级方向
 
@@ -91,7 +102,127 @@ bash scripts/start_app.sh
 前端默认访问地址：`http://127.0.0.1:5173`
 后端默认访问地址：`http://127.0.0.1:8000`
 
-### 4. 停止服务
+如需手动启动后端：
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+### 4. 可选基础设施（PostgreSQL / Redis / MinIO）
+
+项目默认使用 SQLite 快速运行模式。若需要演示或验证 P1 架构增强，可以启动基础设施：
+
+```bash
+docker compose up -d postgres redis minio
+```
+
+服务默认地址：
+
+- PostgreSQL：`127.0.0.1:5432`
+- Redis：`127.0.0.1:6379`
+- MinIO API：`http://127.0.0.1:9000`
+- MinIO Console：`http://127.0.0.1:9001`
+
+如需切换 PostgreSQL，请参考 `backend/.env.example` 中的 `DATABASE_URL` 示例。当前比赛演示仍建议使用 SQLite 快速模式，降低环境复杂度。
+
+### 5. 演示数据初始化
+
+为了保证答辩和录屏时具备稳定的“有资料 RAG 问答”链路，项目提供了两类可重复初始化的演示数据。
+
+#### 5.1 人工智能导论演示课程
+
+```bash
+python scripts/seed_demo_data.py
+```
+
+该脚本会初始化：
+
+- 学生账号：`demo_student` / `demo_pass_12345`
+- 教师账号：`demo_teacher`
+- `人工智能导论 - 演示课程`
+- 课程知识片段与 Chroma 索引
+- 学习画像、错题记录、知识点掌握度、学习进度、收藏和行为日志
+
+适合快速验证多智能体、RAG、防幻觉、资源包、错题本和学习报告闭环。
+
+#### 5.2 高等数学上册真实教材导入
+
+如果 PDF 有可复制文本层，可以直接导入：
+
+```powershell
+$env:GAOSHU_PDF_PATH='C:\Users\zhang\Desktop\高数上.pdf'
+python scripts/seed_gaoshu_pdf.py
+```
+
+如果 PDF 是扫描版，需要启用 OCR。先确保已安装 Tesseract OCR，并准备中文简体语言包 `chi_sim.traineddata`。项目支持把语言包放在本地目录：
+
+```text
+.local/tessdata/chi_sim.traineddata
+```
+
+全量 OCR 导入命令：
+
+```powershell
+$env:GAOSHU_OCR='1'
+$env:GAOSHU_MAX_PAGES='0'
+$env:TESSDATA_PREFIX='C:\Users\zhang\Desktop\智能学习\.local\tessdata'
+python scripts/seed_gaoshu_pdf.py
+```
+
+在本机演示环境中，可选导入扫描版《高数上》：
+
+- PDF 页数：442
+- 知识片段：668
+- 课程 ID：2
+- 课程名称：`高等数学上册 - 真实教材演示课程`
+
+推荐演示问题：
+
+```text
+请根据教材解释函数极限的定义，并举一个简单例子。
+```
+
+```text
+请结合教材说明导数的几何意义和物理意义。
+```
+
+```text
+我对洛必达法则不熟，请根据教材给我生成讲义、思维导图和巩固练习。
+```
+
+### 6. P0 Smoke 回归验证
+
+启动后端并初始化演示数据后运行：
+
+```bash
+python scripts/verify_p0_smoke.py
+```
+
+如果后端运行在临时端口，例如 `8010`：
+
+```bash
+# Windows PowerShell
+$env:P0_SMOKE_BASE='http://127.0.0.1:8010'
+python scripts/verify_p0_smoke.py
+
+# macOS / Linux
+P0_SMOKE_BASE=http://127.0.0.1:8010 python scripts/verify_p0_smoke.py
+```
+
+当前 P0 smoke 覆盖：
+
+- 健康检查与 bootstrap
+- 登录注册与权限限制
+- demo endpoint 禁用
+- 资源中心接口
+- 学习报告 mastery 字段
+- quiz submit 掌握度写入
+- dashboard
+- ask 的 agent trace / grounding / safety / resource package 校验（有可用课程资料时）
+
+### 5. 停止服务
 
 #### Windows
 双击 `停止智能学习Agent.bat`

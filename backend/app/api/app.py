@@ -83,9 +83,6 @@ def api_app_ask(
     session: Session = Depends(get_session),
 ):
     """Unified Q&A — multi-agent graph pipeline with agent traces."""
-    if not llm_configured():
-        _err(ERR_NOT_CONFIGURED, "model service not configured", status_code=400)
-
     from app.services.app_ask_service import answer_workspace_question
 
     return answer_workspace_question(body=body, user=user, session=session)
@@ -102,9 +99,6 @@ async def api_app_ask_stream(
     session: Session = Depends(get_session),
 ):
     """Stream RAG answer via Server-Sent Events (commercial UX)."""
-    if not llm_configured():
-        raise HTTPException(status_code=400, detail=ERR_NOT_CONFIGURED)
-
     from app.services.app_stream_service import stream_workspace_question
 
     return stream_workspace_question(body=body, user=user, session=session)
@@ -127,9 +121,6 @@ def api_app_generate(
     session: Session = Depends(get_session),
 ):
     """Unified resource generation — wraps resource generator + study plan."""
-    if not llm_configured():
-        raise HTTPException(status_code=400, detail=ERR_NOT_CONFIGURED)
-
     try:
         from app.services.app_resource_service import generate_workspace_resource
 

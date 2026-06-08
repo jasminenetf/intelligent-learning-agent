@@ -8,7 +8,7 @@
 
 **内容**: 高等教育个性化学习资源多智能体系统 / 团队名称 / 日期
 
-**演讲**: "各位评委好，我们的项目是高等教育个性化学习资源多智能体系统。它基于 DeepSeek 真大模型，为大学生提供个性化学习资源自动生成服务。"
+**演讲**: "各位评委好，我们的项目是高等教育个性化学习资源多智能体系统。它以科大讯飞 Spark 为主推理引擎，结合多智能体 RAG，为大学生提供个性化学习资源自动生成服务。"
 
 ---
 
@@ -30,8 +30,8 @@
 
 **核心点**:
 1. 上传课程资料 → 自动构建知识库
-2. 自然语言交互 → 提取 8 维学生画像
-3. OCR+RAG 检索 → DeepSeek 生成 5 类个性化资源
+2. 自然语言交互 → 提取 6 维学生画像
+3. OCR+RAG 检索 → Spark/fallback 生成多类个性化资源
 4. 画像驱动学习路径规划
 5. PPTX 一键下载
 
@@ -44,18 +44,18 @@
 **架构分层**:
 ```
 前端 Demo (HTML+CSS+JS)
-  ↓ CORS + Bearer Token
+  ↓ CORS + 聚合 API
 FastAPI 后端 (25 paths / 30 routes)
-  ├── Auth (JWT)
-  ├── Profile API (8维画像)
+  ├── Auth (当前 Demo 免登录，正式认证后续加固)
+  ├── Profile API (6维画像)
   ├── OCR API (OCR→RAG)
   ├── RAG API (ChromaDB 检索)
-  ├── Resource API (5类生成)
+  ├── Resource API (多类生成)
   ├── OpenAI-compatible API (/v1/models, /v1/chat)
-  └── SQLAdmin (/admin)
+  └── Admin (后续加固)
       ↓
 数据层: SQLite + ChromaDB
-AI层: DeepSeek LLM + sentence-transformers
+AI层: Spark 主引擎 + DeepSeek/Mock fallback + sentence-transformers/hash_mock
 ```
 
 **建议配图**: Mermaid 架构图
@@ -64,12 +64,12 @@ AI层: DeepSeek LLM + sentence-transformers
 
 ## P5 · 核心技术路线
 
-**数据流**: 教材/PDF → PyMuPDF 解析 → 文本清洗 → chunker 切块 → sentence-transformers 向量化 → ChromaDB 入库 → RAG 检索 → DeepSeek 生成 → 资源输出
+**数据流**: 教材/PDF → PyMuPDF 解析 → 文本清洗 → chunker 切块 → 向量化 → ChromaDB 入库 → RAG 检索 → Spark/fallback 生成 → 资源输出
 
 **关键指标**:
 - 25 API 端点，30 路由方法
-- 4 张数据库表，8 维画像字段
-- 5 类资源全部 DeepSeek 生成
+- 课程、画像、会话、资源等数据表
+- 多类资源支持 Spark/fallback 生成
 
 ---
 
@@ -91,7 +91,7 @@ User Query → supervisor (协调)
 
 ---
 
-## P7 · 学生画像设计（8维）
+## P7 · 学生画像设计（6维）
 
 | 维度 | 字段 | 示例 |
 |------|------|------|
@@ -100,11 +100,9 @@ User Query → supervisor (协调)
 | 学习节奏 | pace_preference | slow |
 | 知识薄弱点 | weak_points | ["导数","极限"] |
 | 资源偏好 | resource_preference | ["mindmap","quiz"] |
-| 专业 | major | 计算机 |
 | 学习目标 | learning_goal | 考研备考 |
-| 元学习 | meta_learning_level | medium |
 
-**提取方式**: 自然语言 → DeepSeek LLM + 正则规则 fallback
+**提取方式**: 自然语言 → Spark/fallback LLM + 正则规则 fallback
 
 ---
 
@@ -120,23 +118,23 @@ User Query → supervisor (协调)
 
 ---
 
-## P9 · 五类资源生成
+## P9 · 多类资源生成
 
 | 资源 | 输出格式 | 生成方式 | rendered示例 |
 |------|---------|---------|-------------|
-| mindmap | Mermaid | DeepSeek→JSON→Mermaid | 思维导图 |
-| lecture_doc | Markdown | DeepSeek→JSON→MD | 课程讲义 |
-| quiz | JSON | DeepSeek→JSON→卡片 | 选择题+解析 |
-| ppt | PPTX | DeepSeek→JSON→python-pptx | 8页课件 |
-| study_plan | JSON | DeepSeek→JSON→步骤卡片 | 学习路径 |
+| mindmap | Mermaid | Spark/fallback→JSON→Mermaid | 思维导图 |
+| lecture_doc | Markdown | Spark/fallback→JSON→MD | 课程讲义 |
+| quiz | JSON | Spark/fallback→JSON→卡片 | 选择题+解析 |
+| ppt | PPTX | Spark/fallback→JSON→python-pptx | 课件 |
+| study_plan | JSON | Spark/fallback→JSON→步骤卡片 | 学习路径 |
 
-**关键指标**: generated_by=deepseek, fallback_used=false
+**关键指标**: generated_by=spark/deepseek/mock, fallback_used 标识是否兜底
 
 ---
 
 ## P10 · 学习路径规划
 
-**生成流程**: 学生画像 + course_id + topic → RAG 检索 → DeepSeek → JSON → 步骤卡片
+**生成流程**: 学生画像 + course_id + topic → RAG 检索 → Spark/fallback → JSON → 步骤卡片
 
 **输出**: steps(按学习顺序,预计时间,推荐资源类型,练习建议) + recommended_topics + next_action
 
@@ -147,9 +145,9 @@ User Query → supervisor (协调)
 ## P11 · 前端 Demo 展示
 
 **演示流程**:
-1. 登录 → Token 自动填入
-2. 检查系统状态 → 显示 is_mock=false
-3. 提取画像 → 8 维字段
+1. 进入免登录 Demo
+2. 检查系统状态 → 显示 Spark/fallback 和知识库状态
+3. 提取画像 → 6 维字段
 4. RAG 问答 → 回答+引用
 5. 生成 mindmap → Mermaid 渲染
 6. 生成 quiz → 题目卡片
@@ -163,7 +161,7 @@ User Query → supervisor (协调)
 ## P12 · 系统创新点
 
 1. **多智能体协同**: supervisor 调度 + profile/rag/resource/verifier
-2. **画像驱动生成**: 8 维画像个性化 5 类资源内容
+2. **画像驱动生成**: 6 维画像个性化多类资源内容
 3. **Agentic RAG 防幻觉**: 检索+验证+引用闭环
 4. **OCR→RAG 链路**: 扫描版教材也可检索
 5. **OpenAI 兼容**: /v1/models + /v1/chat 可直接对接 LobeChat
@@ -176,8 +174,9 @@ User Query → supervisor (协调)
 - FastAPI / SQLModel / SQLite — 后端
 - ChromaDB — 向量存储
 - LangGraph — 多 Agent 编排
-- DeepSeek API — 真 LLM
-- sentence-transformers — 真 Embedding
+- Spark API — 主 LLM
+- DeepSeek API / Mock — fallback
+- sentence-transformers / hash_mock — Embedding
 - PyMuPDF / python-pptx — 文档处理
 - SQLAdmin — 管理后台
 - Mermaid — 思维导图渲染
@@ -192,10 +191,10 @@ User Query → supervisor (协调)
 | 指标 | 值 |
 |------|-----|
 | API 端点 | 25 paths / 30 routes |
-| LLM | DeepSeek-chat, is_mock=false |
-| Embedding | sentence-transformers, is_mock=false |
-| 5类资源 | generated_by=deepseek, fallback=false |
-| 前端 | 登录/画像/问答/资源/下载 全部通过 |
+| LLM | Spark 主引擎，DeepSeek/Mock fallback |
+| Embedding | sentence-transformers / hash_mock 可切换 |
+| 多类资源 | generated_by 和 fallback_used 可追踪 |
+| 前端 | 免登录/画像/问答/资源/下载 全部通过 |
 | OCR | PyMuPDF 可用，Tesseract 待安装 |
 
 ---
@@ -204,7 +203,7 @@ User Query → supervisor (协调)
 
 **已完成**:
 - 完整后端 + 前端 Demo 闭环
-- DeepSeek 真 LLM + 真 Embedding
+- Spark 主引擎 + fallback + Embedding
 - 画像→资源→路径 个性化链路
 - OCR→RAG→检索 知识库闭环
 

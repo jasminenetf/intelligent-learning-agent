@@ -20,14 +20,10 @@ venv/
 .env.*
 !.env.example
 
-# Data — ignore runtime artifacts but keep seed data
-data/app.db
-data/chroma/
-data/raw/*/
-data/generated/
-backend/data/
-*.db
-*.sqlite
+# Runtime data / caches / local assets
+/data/
+/backend/data/
+.local/
 
 # Uploads
 uploads/
@@ -40,6 +36,13 @@ uploads/
 # Cache
 .cache/
 node_modules/
+*.log
+
+# IDE / workflow state
+.claude/
+.codex/
+.cursor/
+.spec-workflow/
 
 # OS
 .DS_Store

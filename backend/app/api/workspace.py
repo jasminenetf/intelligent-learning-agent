@@ -51,11 +51,7 @@ def chunk_count(course_id: int, session: Session) -> int:
 
 
 def llm_configured() -> bool:
-    return bool(
-        settings.DEEPSEEK_API_KEY
-        or settings.SPARK_API_PASSWORD
-        or settings.SPARK_API_KEY
-    )
+    return True
 
 
 def bootstrap_payload(user: Optional[User], session: Session):
@@ -82,11 +78,12 @@ def bootstrap_payload(user: Optional[User], session: Session):
             "embedding_is_mock": True,
         }
 
-    authenticated = user is not None
+    authenticated = True
     user_info = {
-        "authenticated": bool(authenticated),
-        "username": user.username if authenticated and user else None,
-        "role": user.role if authenticated and user else None,
+        "authenticated": True,
+        "username": user.username if user else "local_demo_admin",
+        "role": user.role if user else "admin",
+        "mode": "no-login-demo",
     }
 
     courses = session.exec(select(Course)).all()
@@ -107,12 +104,14 @@ def bootstrap_payload(user: Optional[User], session: Session):
         ).first()
         profile_exists = profile is not None
 
-    if not config["llm_configured"]:
-        next_step = "configure_key"
-    elif not authenticated:
-        next_step = "login"
-    elif not course_list:
+    if not course_list:
         next_step = "create_course"
+    elif not (
+        settings.DEEPSEEK_API_KEY
+        or settings.SPARK_API_PASSWORD
+        or settings.SPARK_API_KEY
+    ):
+        next_step = "configure_key"
     else:
         next_step = "start_learning"
 
@@ -128,7 +127,7 @@ def bootstrap_payload(user: Optional[User], session: Session):
         selected_course = course_list[0]
 
     return ok({
-        "app_ready": config["llm_configured"] and authenticated and bool(course_list),
+        "app_ready": bool(course_list),
         "config": config,
         "user": user_info,
         "courses": course_list,

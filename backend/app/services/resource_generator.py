@@ -639,30 +639,54 @@ def _generate_mindmap_json(
 
 def _generate_reading_content(topic: str, chunks: list[dict], profile: dict | None = None) -> str:
     """Generate extended reading material from course chunks."""
-    summary = _chunks_to_summary(chunks, max_len=800)
+    summary = _chunks_to_summary(chunks, max_len=900)
     goal = (profile or {}).get("learning_goal") or "课程掌握"
     weak = (profile or {}).get("weak_points") or "[]"
+    keywords = _extract_keywords(summary or topic, max_words=8) or [topic, "核心概念", "典型方法"]
+    source_lines = []
+    for chunk in chunks[:5]:
+        src = chunk.get("source") or chunk.get("metadata", {}).get("source") or "课程资料"
+        page = chunk.get("page_number") or chunk.get("metadata", {}).get("page_number")
+        source_lines.append(f"- {src}" + (f"，第 {page} 页" if page else ""))
     sections = [
         f"# {topic} · 拓展阅读材料",
         "",
-        "## 学习目标",
-        f"围绕「{topic}」进行背景补充与延伸理解，服务学习目标：{goal}。",
+        "## 1. 阅读目标",
+        f"- 围绕「{topic}」建立概念框架，服务学习目标：{goal}。",
+        "- 能用自己的话解释核心定义、适用条件和常见误区。",
+        "- 阅读后能够完成 3-5 道基础题或错题复盘任务。",
         "",
-        "## 课程依据摘要",
+        "## 2. 关键词导航",
+        "、".join(keywords),
+        "",
+        "## 3. 课程依据摘要",
         summary or "（暂无课程片段，以下为通用拓展框架）",
         "",
-        "## 延伸阅读建议",
-        "1. 回顾课程核心定义，并与实际案例建立联系。",
-        "2. 结合课堂讲义与思维导图，形成知识网络。",
-        "3. 针对薄弱点进行定向阅读与例题复盘。",
+        "## 4. 推荐阅读路径",
+        "1. 先读定义与符号说明，圈出不理解的术语。",
+        "2. 再读典型例题，关注每一步使用的条件。",
+        "3. 最后对照错题本，找出自己出错的概念或公式。",
         "",
-        "## 推荐学习动作",
-        "- 先阅读讲义建立概念框架",
-        "- 再通过练习题检验理解",
-        "- 最后回看错题本中的相关知识点",
+        "## 5. 资料来源",
+        "\n".join(source_lines) if source_lines else "- 暂无可引用课程资料",
+        "",
+        "## 6. 思考问题",
+        f"1. 「{topic}」主要解决什么问题？",
+        "2. 这个知识点最容易和哪些概念混淆？",
+        "3. 如果题目条件发生变化，解题方法是否仍然适用？",
+        "",
+        "## 7. 读后自测",
+        "- 用 3 句话总结本知识点。",
+        "- 写出一个典型例题的解题步骤。",
+        "- 标记一个仍不确定的问题，回到问答页继续追问。",
+        "",
+        "## 8. 推荐学习动作",
+        "- 先阅读讲义建立概念框架。",
+        "- 再通过练习题检验理解。",
+        "- 最后回看错题本中的相关知识点。",
     ]
     if weak and weak != "[]":
-        sections.append(f"\n## 结合薄弱点\n建议重点阅读与 `{weak}` 相关的章节与例题。")
+        sections.append(f"\n## 9. 结合薄弱点\n建议重点阅读与 `{weak}` 相关的章节与例题，并优先生成讲义、导图和巩固练习。")
     return "\n".join(sections)
 
 
