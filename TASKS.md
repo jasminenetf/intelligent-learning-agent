@@ -47,3 +47,23 @@
 - [x] 演示脚本/流程初稿
 - [ ] Spark 连接实测
 - [ ] P0 smoke 在答辩机器上通过
+
+## 🔧 深度检验修复长任务清单（2026-06-08）
+
+详单见 `docs/deep-qa-fix-plan.md`。
+
+### P0 正常使用必修
+- [ ] 统一启动入口和端口：Windows / Linux / WSL 都应匹配 `frontend-demo` 默认 API Base。
+- [ ] 修正 `README.md`、`RUNBOOK.md`、`frontend-demo/README.md` 的手动启动说明，避免 `8000/app.main` 与 `8010/app.demo_main` 混用。
+- [ ] 修正 `install.bat` / `install.sh` 安装后提示，明确下一步启动 `启动智能学习Agent.bat` 或 `scripts/start_app.sh`。
+- [ ] 一键启动脚本增加 `/health` 自检和失败提示。
+- [ ] 复跑语法检查、P0 smoke、浏览器导航和资源生成交互验证。
+
+### P1 可用性增强
+- [ ] 正式后端资源生成和复习计划改为异步任务或增加明确进度提示，避免 25-40 秒等待误判为卡死。
+- [ ] 补齐后端 pytest，避免 `no tests ran`。
+- [ ] 补齐 Playwright E2E 依赖安装/CI 说明，避免 `playwright` 命令不存在。
+- [ ] 清理 LangGraph `RunnableConfig` 类型警告。
+- [ ] 优化学习路径入口，在侧边栏或助手预览区明确展示。
+- [ ] 规范 `.env.example`，去重 Spark 字段并默认关闭 Admin。
+- [ ] demo 下载格式按资源类型输出，PPT 下载升级为 `.pptx`。
