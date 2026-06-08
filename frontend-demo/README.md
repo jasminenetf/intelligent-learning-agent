@@ -19,7 +19,7 @@ frontend-demo/
 ```bash
 # 1. 启动后端
 cd C:\Users\zhang\Desktop\智能学习\backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010
 
 # 2. 启动前端（新终端）
 cd C:\Users\zhang\Desktop\智能学习\frontend-demo
@@ -29,11 +29,13 @@ python -m http.server 5173
 # http://127.0.0.1:5173
 ```
 
+前端默认 API Base 为 `http://127.0.0.1:8010`，与一键启动脚本保持一致。
+
 ## 页面导航
 
 | 页面 | 功能 |
 |------|------|
-| 数据看板 | 课程状态、画像摘要、建议操作、一键演示 |
+| 数据看板 | 课程状态、画像摘要、建议操作、学习闭环入口 |
 | 学习助手 | 三栏：聊天对话 + Artifacts 展示 + 文献溯源 |
 | 资源生成 | 资源卡片选择、生成进度、结果 Tab 展示 |
 | 课程管理 | 课程列表、选择当前课程、创建课程 |

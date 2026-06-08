@@ -18,23 +18,32 @@ fi
 source "$ROOT/.venv/bin/activate"
 
 # Kill existing
-fuser -k 8000/tcp 2>/dev/null || true
+fuser -k 8010/tcp 2>/dev/null || true
 fuser -k 5173/tcp 2>/dev/null || true
 sleep 1
 
 # Backend
-echo "[1/2] Backend http://127.0.0.1:8000"
+echo "[1/2] Backend http://127.0.0.1:8010"
 cd "$ROOT/backend"
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-echo "       PID: $!"
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010 &
+BACKEND_PID=$!
+echo "       PID: $BACKEND_PID"
 
 # Frontend
 echo "[2/2] Frontend http://127.0.0.1:5173"
 cd "$ROOT/frontend-demo"
 python -m http.server 5173 &
-echo "       PID: $!"
+FRONTEND_PID=$!
+echo "       PID: $FRONTEND_PID"
 
-sleep 2
+sleep 3
+
+if command -v curl &>/dev/null; then
+    curl -fsS http://127.0.0.1:8010/health >/dev/null || {
+        echo "ERROR: backend health check failed. See backend process $BACKEND_PID."
+        exit 1
+    }
+fi
 
 # Auto-open browser (WSL -> Windows)
 if command -v powershell.exe &>/dev/null; then
@@ -49,6 +58,7 @@ echo ""
 echo "============================================"
 echo "  System ready"
 echo "  http://127.0.0.1:5173"
+echo "  Backend: http://127.0.0.1:8010"
 echo "  Press Ctrl+C to stop"
 echo "============================================"
 echo ""

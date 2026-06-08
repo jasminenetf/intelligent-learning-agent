@@ -15,8 +15,8 @@ cd C:\Users\zhang\Desktop\智能学习
 .\启动智能学习Agent.bat
 
 # 验证
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/api/version
+curl http://127.0.0.1:8010/health
+curl http://127.0.0.1:8010/api/version
 ```
 
 前端默认地址：
@@ -26,14 +26,14 @@ http://127.0.0.1:5173
 
 后端默认地址：
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8010
 ```
 
-### 手动启动后端
+### 手动启动当前免登录 Demo 后端
 ```powershell
 cd C:\Users\zhang\Desktop\智能学习\backend
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
 ### 手动启动前端
@@ -60,9 +60,9 @@ cd C:\Users\zhang\Desktop\智能学习
 
 ### 健康检查
 ```powershell
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/api/version
-curl http://127.0.0.1:8000/api/app/bootstrap
+curl http://127.0.0.1:8010/health
+curl http://127.0.0.1:8010/api/version
+curl http://127.0.0.1:8010/api/app/bootstrap
 ```
 
 ## 常用命令
@@ -108,7 +108,7 @@ project-root/
 
 ## 开发模式
 ```powershell
-# 后端热重载
+# 正式后端开发热重载
 cd C:\Users\zhang\Desktop\智能学习\backend
 python -m uvicorn app.main:app --reload --port 8000
 

@@ -26,33 +26,33 @@
 
 发现问题：
 
-- P0-1：`scripts/start_app.sh` 启动 `app.main:app` 的 `8000`，但 `frontend-demo/app.js` 默认请求 `8010`，Linux/WSL 手动一键启动会前后端端口不匹配。
-- P0-2：`README.md`、`RUNBOOK.md`、`frontend-demo/README.md` 手动启动说明仍混用 `8000/app.main` 和当前 `8010/app.demo_main`，新用户容易按错。
-- P0-3：`install.bat` 安装后提示“双击 this file to start”，文案指向不清，应明确双击 `启动智能学习Agent.bat`。
+- P0-1：`scripts/start_app.sh` 曾启动 `app.main:app` 的 `8000`，但 `frontend-demo/app.js` 默认请求 `8010`。已对齐为 `app.demo_main:app` + `8010`。
+- P0-2：`README.md`、`RUNBOOK.md`、`frontend-demo/README.md` 曾混用 `8000/app.main` 和 `8010/app.demo_main`。已统一当前 Demo 启动说明。
+- P0-3：`install.bat` 安装后提示曾指向不清。已明确下一步启动 `启动智能学习Agent.bat`。
 - P1-1：正式后端 `app.main` 的资源生成链路偏慢，单资源约 25 秒，复习计划约 40 秒；功能可用但用户会以为卡住。
 - P1-2：`pytest` 当前没有测试用例，质量门禁空转。
 - P1-3：`tests/e2e` 声明 Playwright 测试，但依赖未安装时 `npm test` 直接失败，缺少一键安装/CI 说明。
 - P1-4：`app.main` 导入时 LangGraph 提示节点 `config` 参数类型应使用 `RunnableConfig`，不影响运行但需要清理。
 - P1-5：学习路径快捷按钮会跳到独立隐藏页面，功能正常但用户路径感弱；建议在侧边栏增加入口或在助手预览区同步显示。
-- P1-6：root `.env.example` 有重复 `SPARK_API_KEY`，且 `ADMIN_ENABLED=true` 不适合公开模板。
+- P1-6：root `.env.example` 曾有重复 `SPARK_API_KEY`，且 `ADMIN_ENABLED=true` 不适合公开模板。已修正为 `SPARK_API_PASSWORD` 和 `ADMIN_ENABLED=false`。
 - P1-7：demo 下载接口目前统一下载 `.txt`，PPT 资源可预览但下载不是 `.pptx`，答辩演示可接受，正式体验需升级。
 
 ## 修复长任务清单
 
 ### P0：必须修到正常使用
 
-- [ ] 统一启动端口和入口。
+- [x] 统一启动端口和入口。
   - Windows：继续使用 `app.demo_main:app` + `8010` + `5173`。
   - Linux/WSL：将 `scripts/start_app.sh` 改为同样启动 `app.demo_main:app` + `8010`，或让前端可通过环境/配置指定 `8000`。
   - 验收：`bash scripts/start_app.sh` 后前端所有接口请求不再打到错误端口。
 
-- [ ] 修正文档启动说明。
+- [x] 修正文档启动说明。
   - `README.md`：明确“答辩/朋友运行”使用 `启动智能学习Agent.bat`。
   - `RUNBOOK.md`：手动启动命令改成当前 demo 入口，另列正式后端入口作为开发模式。
   - `frontend-demo/README.md`：后端端口改为 `8010` 或补充 API Base 配置。
   - 验收：新用户只看 README 就能启动页面并点问答。
 
-- [ ] 修正安装脚本文案。
+- [x] 修正安装脚本文案。
   - `install.bat` 安装完成后提示双击 `启动智能学习Agent.bat`。
   - `install.sh` 完成后给出 Windows / Linux 对应启动方式。
   - 验收：安装后的下一步不会误导用户继续双击安装器。
@@ -93,7 +93,7 @@
   - 侧边栏增加“学习路径”入口，或让助手右侧学习路径 tab 直接显示步骤。
   - 验收：用户点击“学习路径”后能明确看到跳转目标和步骤内容。
 
-- [ ] 规范 `.env.example`。
+- [x] 规范 `.env.example`。
   - 去掉重复 `SPARK_API_KEY`。
   - root 模板 `ADMIN_ENABLED` 默认改为 `false`。
   - 统一 Spark 推荐字段为 `SPARK_API_PASSWORD`。
@@ -110,7 +110,7 @@
 
 - [ ] 将本轮深检命令固化成 `scripts/deep_qa_check.py`。
 - [ ] 增加 GitHub Actions：语法检查、smoke、敏感文件检查。
-- [ ] 整理 README 中 “一键演示” 和当前真实按钮名称，避免写不存在的按钮。
+- [x] 整理 README 中 “一键演示” 和当前真实按钮名称，避免写不存在的按钮。
 - [ ] 固化种子课程：首次启动自动提供“人工智能导论 - 演示课程”。
 - [ ] 增加 API 设置页的连接失败解释，不只显示泛化错误。
 - [ ] 把正式后端和 demo 后端的职责写入 `DECISIONS.md`，避免后续又混淆入口。

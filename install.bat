@@ -31,7 +31,7 @@ echo   Installation complete!
 echo ============================================
 echo.
 echo Next steps:
-echo   1. Edit backend\.env and add your DeepSeek API key
-echo   2. Double-click this file to start: 启动智能学习Agent.bat
+echo   1. Open the app and fill Spark or DeepSeek API key in Settings
+echo   2. Double-click to start: 启动智能学习Agent.bat
 echo.
 pause

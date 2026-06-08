@@ -82,8 +82,8 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 ### 3 分钟答辩演示脚本
 
 1. **设置页**：配置 Spark → 测试连接成功（顶部栏显示 `Spark`）
-2. **课程资料库**：上传 PDF/Word（教师账户）→ 确认知识片段数量 > 0
-3. **会话中心**：点击「一键演示」→ 观察流式回答 + 右侧五 Agent 协作轨迹 + 课程引用
+2. **课程资料库**：免登录上传 PDF/Word → 确认知识片段数量 > 0
+3. **会话中心**：直接提问 → 观察流式回答 + 右侧五 Agent 协作轨迹 + 课程引用
 4. **右侧预览**：自动/手动生成思维导图（Mermaid 渲染）
 5. **错题本 → 复习路径**：完成测验错题后演示闭环
 6. **学习报告**：展示画像驱动建议
@@ -100,15 +100,17 @@ bash scripts/start_app.sh
 ```
 
 前端默认访问地址：`http://127.0.0.1:5173`
-后端默认访问地址：`http://127.0.0.1:8000`
+后端默认访问地址：`http://127.0.0.1:8010`
 
-如需手动启动后端：
+如需手动启动当前免登录 Demo 后端：
 
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010 --reload
 ```
+
+正式后端开发入口仍保留为 `app.main:app`，建议仅在调试数据库、RAG 和完整 FastAPI 路由时使用。
 
 ### 4. 可选基础设施（PostgreSQL / Redis / MinIO）
 
@@ -238,7 +240,7 @@ bash scripts/stop_app.sh
 ## 使用流程
 
 ```text
-登录/注册 → 创建课程 → 上传资料 → 构建知识库 → 对话提问 → 生成资源 → 做题复盘 → 查看报告
+打开页面 → 配置 API Key → 创建课程 → 上传资料 → 构建知识库 → 对话提问 → 生成资源 → 做题复盘 → 查看报告
 ```
 
 ### 主要页面
@@ -252,13 +254,13 @@ bash scripts/stop_app.sh
 | 资源中心 | 讲义、导图、题库、PPT、拓展阅读等资产管理 |
 | 错题本 | 错题记录、复习计划、薄弱点追踪 |
 | 学习报告 | 学习进度、行为记录、推荐建议 |
-| 账户与设置 | 登录、注册、配置与系统状态 |
+| 账户与设置 | 免登录状态、API Key 配置与系统状态 |
 
 ---
 
 ## API 概览
 
-后端启动在 `http://127.0.0.1:8000`
+当前免登录 Demo 后端启动在 `http://127.0.0.1:8010`
 
 | 端点 | 说明 |
 |------|------|
@@ -278,7 +280,7 @@ bash scripts/stop_app.sh
 | `GET /api/analytics/bookmarks` | 收藏资源 |
 | `GET /api/settings/status` | 系统状态 |
 
-完整 API 文档：`http://127.0.0.1:8000/docs`
+完整 API 文档：`http://127.0.0.1:8010/docs`
 
 ---
 

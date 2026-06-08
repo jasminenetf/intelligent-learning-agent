@@ -35,6 +35,7 @@ uploads/
 
 # Cache
 .cache/
+.pytest_cache/
 node_modules/
 *.log
 
