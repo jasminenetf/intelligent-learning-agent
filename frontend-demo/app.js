@@ -719,9 +719,36 @@ function _renderQuizPanel(el, items, topic){
     ).join('');
     return '<div class="course-card" data-quiz-idx="' + idx + '"><h4>Q' + (idx + 1) + '. ' + esc(it.question || '') + '</h4>' + opts +
       '<div class="course-meta"><span>知识点 ' + esc(it.knowledge_point || topic || '当前主题') + '</span><span>提交后自动写入掌握度</span></div>' +
-      (it.explanation ? '<div class="course-meta"><span>解析将在提交后用于复盘</span></div>' : '') +
+      '<div class="quiz-inline-feedback" id="quiz-feedback-' + idx + '"></div>' +
       '<button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="submitQuizAnswer(' + idx + ')">提交本题</button></div>';
   }).join('');
+}
+
+function _renderQuizFeedback(idx, item, selectedIdx, isCorrect){
+  const el = document.getElementById('quiz-feedback-' + idx);
+  if (!el) return;
+  const opts = item.options || [];
+  const correctIdx = Number(item.answer || 0);
+  const selectedText = opts[selectedIdx] || '未选择';
+  const correctText = opts[correctIdx] || '正确选项';
+  const title = isCorrect ? '答对了，但也要确认你真的理解' : '这题选错了，先在这里讲清楚';
+  const why = item.explanation || '这道题考察的是概念本身和适用条件，不是只看答案形式。';
+  const fix = isCorrect
+    ? '继续做下一题；如果能用自己的话解释为什么其他选项错，说明真正掌握。'
+    : '先把正确选项读一遍，再回到题干找关键词：题目问的是“核心含义/关键步骤/常见错误”中的哪一种。错因通常不是记忆问题，而是没有先判断条件。';
+  el.innerHTML =
+    '<div class="' + (isCorrect ? 'quiz-feedback show correct-fb' : 'quiz-feedback show wrong-fb') + '" style="display:block;margin-top:10px">' +
+      '<div style="font-weight:700;margin-bottom:6px">' + esc(title) + '</div>' +
+      '<div style="line-height:1.7"><strong>你的选择：</strong>' + esc(selectedText) + '</div>' +
+      '<div style="line-height:1.7"><strong>正确答案：</strong>' + esc(correctText) + '</div>' +
+      '<div style="line-height:1.7;margin-top:6px"><strong>为什么：</strong>' + esc(why) + '</div>' +
+      '<div style="line-height:1.7;margin-top:6px"><strong>怎么补：</strong>' + esc(fix) + '</div>' +
+      '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(&quot;lecture_doc&quot;, ' + jsAttrArg(item.knowledge_point || S.currentQuiz.topic || _currentLearningTopic()) + ')">看详细讲义</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(&quot;mindmap&quot;, ' + jsAttrArg(item.knowledge_point || S.currentQuiz.topic || _currentLearningTopic()) + ')">看知识结构</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="navTo(&quot;wrong-book&quot;)">稍后去错题本</button>' +
+      '</div>' +
+    '</div>';
 }
 
 function _renderPptPanel(el, d){
@@ -792,8 +819,8 @@ async function submitQuizAnswer(idx){
       }),
     });
     if (r.ok) {
-      toast(isCorrect ? '回答正确，画像已更新' : '已记录错题，建议生成复习资源', isCorrect ? 'success' : 'info');
-      if (!isCorrect) navTo('wrong-book');
+      _renderQuizFeedback(idx, item, selectedIdx, isCorrect);
+      toast(isCorrect ? '回答正确，画像已更新' : '已记录错题，先看本题解析', isCorrect ? 'success' : 'info');
       return;
     }
     toast('作答记录失败', 'info');
