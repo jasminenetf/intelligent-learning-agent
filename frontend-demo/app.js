@@ -224,7 +224,7 @@ async function downloadAuthFile(path, filename) {
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = objectUrl;
-    a.download = filename || 'download.pptx';
+    a.download = filename || 'download.md';
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -244,8 +244,12 @@ function bindSidebarNav() {
 function _resourceDownloadBtn(resourceId, downloadUrl, filename) {
   const path = downloadUrl || (resourceId ? '/api/resources/download/' + encodeURIComponent(resourceId) : '');
   if (!path) return '';
-  const fname = filename || 'download.pptx';
+  const fname = filename || 'download.md';
   return '<button type="button" class="btn btn-sm btn-primary" onclick="downloadAuthFile(' + jsAttrArg(path) + ', ' + jsAttrArg(fname) + ')">下载</button>';
+}
+
+function _resourceFileExt(type) {
+  return ['lecture_doc', 'mindmap', 'quiz', 'ppt', 'study_plan', 'reading', 'video_script'].includes(type) ? '.md' : '.txt';
 }
 
 function _showPageError(el, title, detail) {
@@ -725,8 +729,8 @@ function _renderPptPanel(el, d){
   const title = d.title || 'PPT课件';
   const slideCount = d.slide_count || (Array.isArray(d.slides) ? d.slides.length : '?');
   const slides = Array.isArray(d.slides) ? d.slides.slice(0, 8) : [];
-  el.innerHTML = '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>共 ' + esc(String(slideCount)) + ' 页</span><span>适合课堂展示 / 汇报复习</span><span>可加入资源包</span></div><div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, title + '.pptx') + '</div></div>' +
-    (slides.length ? slides.map(function(s, i){ return '<div class="course-card"><h4>📊 第 ' + (i + 1) + ' 页：' + esc(s.title || s.heading || '课件页') + '</h4><div style="white-space:pre-wrap;font-size:13px;line-height:1.7;margin-top:8px">' + esc((s.bullets || s.points || []).join('\n') || s.content || '') + '</div></div>'; }).join('') : '<div class="course-card"><h4>课件已生成</h4><div class="course-meta"><span>点击下载按钮获取完整 PPT 文件</span></div></div>');
+  el.innerHTML = '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>共 ' + esc(String(slideCount)) + ' 页</span><span>文字版模拟 PPT</span><span>可复制到 PowerPoint / WPS</span></div><div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, title + '.md').replace('>下载<', '>下载文字版课件<') + '</div></div>' +
+    (slides.length ? slides.map(function(s, i){ return '<div class="course-card"><h4>📊 第 ' + (i + 1) + ' 页：' + esc(s.title || s.heading || '课件页') + '</h4><div style="white-space:pre-wrap;font-size:13px;line-height:1.7;margin-top:8px">' + esc((s.bullets || s.points || []).join('\n') || s.content || '') + (s.speaker_notes ? '\n\n讲解备注：' + esc(s.speaker_notes) : '') + '</div></div>'; }).join('') : '<div class="course-card"><h4>文字课件已生成</h4><div class="course-meta"><span>点击下载按钮获取 Markdown 版本</span></div></div>');
 }
 
 function _renderTextResourcePanel(el, d, type){
@@ -972,7 +976,7 @@ function renderResourceJobResults(resources){
   el.innerHTML = resources.map(r => {
     const type = _resourceTypeOf(r);
     const title = r.title || resourceLabel(type);
-    const fname = title + (['lecture_doc', 'mindmap', 'quiz', 'reading'].includes(type) ? '.md' : '.txt');
+    const fname = title + _resourceFileExt(type);
     return '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>' + esc(resourceLabel(type)) + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
       _resourceDownloadBtn(r.resource_id, r.download_url, fname) +
       '<button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">去资源中心</button></div></div>';
@@ -1153,7 +1157,7 @@ function _resourceFileCards(files){
     const rid = esc(f.resource_id);
     const oname = esc(origin);
     return '<div class="course-card"><h4>' + icon + ' ' + oname + '</h4><div class="course-meta">' + meta.join('') + '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-      _resourceDownloadBtn(f.resource_id, f.download_url, origin + '.txt') +
+      _resourceDownloadBtn(f.resource_id, f.download_url, origin + _resourceFileExt(type)) +
       '<button class="btn btn-sm btn-outline" onclick="bookmarkResource(' + jsAttrArg(rid) + ', ' + jsAttrArg(oname) + ')">收藏</button><button class="btn btn-sm btn-outline" onclick="shareResource(' + jsAttrArg(rid) + ', ' + jsAttrArg(oname) + ')">分享</button></div></div>';
   }).join('');
 }

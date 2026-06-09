@@ -729,13 +729,15 @@ def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> 
     if resource_type == "ppt":
         return {
             **base,
+            "format": "markdown_slide_deck",
+            "download_ext": ".md",
             "slide_count": 5,
             "slides": [
-                {"title": "学习目标", "bullets": ["理解核心概念", "掌握基本方法", "完成配套练习"]},
-                {"title": "核心概念", "bullets": [f"围绕「{topic or '当前主题'}」建立知识框架", "结合课程资料进行解释"]},
-                {"title": "例题讲解", "bullets": ["从简单问题开始", "逐步拆解解题步骤"]},
-                {"title": "常见误区", "bullets": ["只记结论不理解条件", "忽略复盘和引用依据"]},
-                {"title": "课后练习", "bullets": ["完成练习题", "查看学习报告", "继续生成导图或讲义"]},
+                {"title": "学习目标", "bullets": ["理解核心概念", "掌握基本方法", "完成配套练习"], "speaker_notes": "开场说明本课围绕一个具体知识点建立可复习的学习闭环。"},
+                {"title": "核心概念", "bullets": [f"围绕「{topic or '当前主题'}」建立知识框架", "结合课程资料解释定义、条件和适用范围"], "speaker_notes": "先讲概念本身，再强调适用条件，避免只背结论。"},
+                {"title": "例题讲解", "bullets": ["从简单问题开始", "逐步拆解解题步骤", "标出每一步使用的定义或定理"], "speaker_notes": "用板书式步骤展示解题，不跳步。"},
+                {"title": "常见误区", "bullets": ["只记结论不理解条件", "忽略左右或边界情况", "错题没有回到概念复盘"], "speaker_notes": "把学生可能犯错的地方讲在前面，降低练习挫败感。"},
+                {"title": "课后练习", "bullets": ["完成 3 道配套练习题", "记录错因并查看学习报告", "继续生成导图或讲义复盘"], "speaker_notes": "收束到下一步行动，让课件真正服务学习。"},
             ],
         }
     if resource_type == "study_plan":
@@ -809,11 +811,25 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
                 lines.append(f"解析：{q.get('explanation')}")
         return "\n".join(lines)
     if resource_type == "ppt":
-        lines = [f"# {title}", "## PPT 大纲"]
+        lines = [
+            f"# {title}",
+            "",
+            "> 文字版模拟 PPT：每个“第 N 页”就是一页幻灯片，可直接复制到 PowerPoint / WPS，也可作为答辩讲稿使用。",
+            "",
+            "## 目录",
+        ]
         for idx, slide in enumerate(payload.get("slides") or [], 1):
-            lines.append(f"\n### 第 {idx} 页：{slide.get('title', '课件页')}")
+            lines.append(f"- 第 {idx} 页：{slide.get('title', '课件页')}")
+        lines.append("\n---")
+        for idx, slide in enumerate(payload.get("slides") or [], 1):
+            lines.append(f"\n## 第 {idx} 页：{slide.get('title', '课件页')}")
+            lines.append("")
             for bullet in slide.get("bullets") or slide.get("points") or []:
                 lines.append(f"- {bullet}")
+            if slide.get("speaker_notes"):
+                lines.append("")
+                lines.append(f"**讲解备注**：{slide.get('speaker_notes')}")
+            lines.append("\n---")
         return "\n".join(lines)
     return str(payload.get("content") or f"# {title}\n\n内容已生成。")
 
@@ -1137,7 +1153,8 @@ def download_resource(resource_id: str):
     payload = STATE["resource_payloads"].get(resource_id) or item
     title = item.get("title") or "学习资源"
     content = _resource_download_text(payload, item)
-    ext = ".md" if (item.get("type") or item.get("resource_type")) in {"lecture_doc", "reading", "mindmap", "quiz"} else ".txt"
+    resource_type = item.get("type") or item.get("resource_type")
+    ext = ".md" if resource_type in {"lecture_doc", "reading", "mindmap", "quiz", "ppt", "study_plan"} else ".txt"
     filename = quote(f"{title}{ext}")
     return Response(
         content=content.encode("utf-8"),
