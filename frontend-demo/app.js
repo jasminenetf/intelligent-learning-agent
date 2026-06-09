@@ -29,6 +29,7 @@ const S = {
   autoArtifactTopicKey: '',
   autoArtifactRunning: false,
   mermaidZoom: 1.35,
+  currentProfile: null,
 };
 
 const $ = (s) => document.querySelector(s);
@@ -1517,12 +1518,21 @@ function _finishAskResponse(el, msg, d, box){
   S.lastQuestion = msg || S.lastQuestion || '';
   S.lastTopic = msg || topicFromPackage || S.lastTopic || '';
   S.lastAnswer = answer;
+  S.pendingStudyTopic = S.lastTopic;
+  S.pendingStudyPlan = null;
+  if (d.student_profile && typeof d.student_profile === 'object') {
+    S.currentProfile = d.student_profile;
+  }
   if (el) {
     el.innerHTML = '<div class="msg-content">' + esc(answer || '已收到问题，当前环境暂未返回正式答案。') + '</div>' +
       (refs.length ? '<div class="msg-citations">📚 ' + refs.map(x => esc(typeof x === 'string' ? x : (x.source || x.chunk_id || '引用'))).join(' · ') + '</div>' : '') +
       _renderResourceSuggestions(suggestions, msg);
   }
   _renderAskSidebar(d);
+  if (d.profile_delta || d.student_profile) {
+    const profileHint = d.student_profile || d.profile_delta || {};
+    toast('学习画像已根据本轮对话自动更新：' + (profileHint.last_topic || profileHint.learning_goal || profileHint.knowledge_level || '已识别新状态'), 'success');
+  }
   const statusEl = document.getElementById('avatar-status-text');
   if (statusEl) {
     statusEl.textContent = (d.provider ? '模型 ' + d.provider : '讲解就绪') + ' · 可点击「讲解回答」';
@@ -1692,6 +1702,12 @@ function _profileSnapshotText(profile){
   return bits.join(' · ') || '尚未提取画像';
 }
 
+function _unwrapProfilePayload(res){
+  const d = unwrapApi(res);
+  if (d && d.profile && typeof d.profile === 'object') return d.profile;
+  return d || {};
+}
+
 async function loadProfileCenter(){
   const el = document.getElementById('page-profile');
   if (!el) return;
@@ -1701,8 +1717,9 @@ async function loadProfileCenter(){
       api('/api/profiles/current'),
       api('/api/profiles/history')
     ]);
-    const profile = profileRes.ok ? (profileRes.data || profileRes) : {};
-    const history = historyRes.ok ? (historyRes.data || historyRes) : {};
+    const profile = profileRes.ok ? _unwrapProfilePayload(profileRes) : {};
+    const history = historyRes.ok ? unwrapApi(historyRes) : {};
+    S.currentProfile = profile;
     const weakPoints = _parseJsonList(profile.weak_points);
     const prefs = _parseJsonList(profile.resource_preference);
     const versions = history.versions || [];
@@ -1913,7 +1930,7 @@ async function loadLearningPath(){
   const el = document.getElementById('page-learning-path');
   if (!el) return;
   el.innerHTML = '<div class="loading-block"><span class="spinner"></span> 加载学习路径中...</div>';
-  const topic = S.pendingStudyTopic || (document.getElementById('chat-input') || {}).value?.trim() || '当前学习主题';
+  const topic = S.pendingStudyTopic || S.lastTopic || S.lastQuestion || (document.getElementById('chat-input') || {}).value?.trim() || '当前学习主题';
   try {
     let plan = S.pendingStudyPlan || {};
     if (!plan || !plan.steps) {
@@ -1926,11 +1943,27 @@ async function loadLearningPath(){
       S.pendingStudyPlan = plan;
     }
     const steps = Array.isArray(plan.steps) ? plan.steps : [];
-    const body = steps.length ? steps.map((s, i) =>
-      '<div class="course-card"><h4>步骤 ' + (i + 1) + ' · ' + esc(s.title || s.name || '学习步骤') + '</h4><div class="course-meta"><span>' + esc(s.description || s.detail || '') + '</span></div>' +
-      '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(&quot;lecture_doc&quot;, ' + jsAttrArg(s.title || topic) + ')">生成讲义</button><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(&quot;quiz&quot;, ' + jsAttrArg(s.title || topic) + ')">配套练习</button></div></div>'
-    ).join('') : '<div class="empty-state"><div class="empty-icon">🗺️</div><p>暂无学习路径</p><p style="font-size:11px;color:var(--gray-400)">先在会话中心提问，或从错题本生成复习路径</p><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="navTo(\'assistant\')">去提问</button></div>';
-    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习路径 · ' + esc(plan.title || topic) + '</h3><button class="btn btn-sm btn-outline" onclick="S.pendingStudyPlan=null;loadLearningPath()">🔄 重新生成</button></div>' + body + '</div>';
+    const body = steps.length ? steps.map(function(s, i){
+      const stepTopic = s.topic || s.title || s.name || topic;
+      const types = Array.isArray(s.resource_types) && s.resource_types.length ? s.resource_types : ['lecture_doc', 'mindmap', 'quiz'];
+      const resourceBtns = types.slice(0, 4).map(function(t){
+        return '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(' + jsAttrArg(t) + ', ' + jsAttrArg(stepTopic) + ')">生成' + esc(resourceLabel(t)) + '</button>';
+      }).join('');
+      return '<div class="course-card">' +
+        '<h4>步骤 ' + esc(String(s.order || i + 1)) + ' · ' + esc(stepTopic) + '</h4>' +
+        '<p style="font-size:13px;line-height:1.75;color:var(--gray-700);margin:8px 0">' + esc(s.description || s.detail || '') + '</p>' +
+        '<div class="course-meta"><span>为什么学：' + esc(s.reason || '根据最近提问和画像推荐') + '</span></div>' +
+        '<div class="course-meta" style="margin-top:6px"><span>预计 ' + esc(String(s.estimated_minutes || 15)) + ' 分钟</span><span>资料：' + esc(types.map(resourceLabel).join(' / ')) + '</span></div>' +
+        (s.practice ? '<div class="course-meta" style="margin-top:6px"><span>练习任务：' + esc(s.practice) + '</span></div>' : '') +
+        '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + resourceBtns + '</div></div>';
+    }).join('') : '<div class="empty-state"><div class="empty-icon">🗺️</div><p>暂无学习路径</p><p style="font-size:11px;color:var(--gray-400)">先在会话中心提问，或从错题本生成复习路径</p><button class="btn btn-sm btn-primary" style="margin-top:10px" onclick="navTo(\'assistant\')">去提问</button></div>';
+    const summary = plan.profile_summary || (S.currentProfile && S.currentProfile.learning_goal) || '会根据最近问题、画像、错题和资源偏好实时生成';
+    const recommended = Array.isArray(plan.recommended_topics) && plan.recommended_topics.length
+      ? '<div class="lr-chips" style="margin:10px 0">' + plan.recommended_topics.map(function(t){ return '<span class="lr-chip">' + esc(t) + '</span>'; }).join('') + '</div>'
+      : '';
+    el.innerHTML = '<div class="card"><div class="card-header"><h3>学习路径 · ' + esc(plan.title || topic) + '</h3><button class="btn btn-sm btn-outline" onclick="S.pendingStudyPlan=null;loadLearningPath()">🔄 重新生成</button></div>' +
+      '<div class="course-card"><h4>个性化依据</h4><div class="course-meta"><span>' + esc(summary) + '</span></div>' + recommended + (plan.next_action ? '<div class="course-meta"><span>下一步：' + esc(plan.next_action) + '</span></div>' : '') + '</div>' +
+      body + '</div>';
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">学习路径加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
   }

@@ -91,6 +91,23 @@ STATE: dict[str, Any] = {
     "bookmarks": [
         {"resource_id": "gaoshu-outline", "title": "高等数学上册章节导学"}
     ],
+    "profile": {
+        "major": "高等数学上册复习",
+        "knowledge_level": "",
+        "learning_goal": "",
+        "cognitive_style": "",
+        "pace_preference": "moderate",
+        "weak_points": [],
+        "resource_preference": [],
+        "emotion_tendency": "",
+        "profile_source": "dialogue",
+        "profile_version": 0,
+        "profile_confidence": 0.0,
+        "raw_evidence": "",
+        "last_topic": "",
+    },
+    "profile_versions": [],
+    "profile_changes": [],
 }
 
 GAOSHU_COURSE_DESCRIPTION = (
@@ -201,6 +218,171 @@ def _gaoshu_context(topic: str) -> dict[str, Any]:
         "summary": "高等数学上册围绕极限、导数、积分和微分方程建立连续变化问题的分析工具。",
         "steps": ["先定位教材章节", "理解定义和定理适用条件", "用例题验证方法", "通过练习巩固薄弱点"],
         "pitfalls": ["只背公式不看条件", "计算步骤跳跃", "错题没有回到概念复盘"],
+    }
+
+
+def _profile_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(x) for x in value if str(x).strip()]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(x) for x in parsed if str(x).strip()]
+        except Exception:
+            pass
+        return [value] if value.strip() else []
+    return [str(value)]
+
+
+def _merge_unique(items: list[str], additions: list[str], limit: int = 8) -> list[str]:
+    out: list[str] = []
+    for item in [*items, *additions]:
+        text = str(item or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out[:limit]
+
+
+def _infer_profile_delta(message: str) -> dict[str, Any]:
+    text = message or ""
+    ctx = _gaoshu_context(text)
+    lowered = text.lower()
+    weak = [ctx["keyword"]] if ctx.get("keyword") and ctx["keyword"] != "高等数学" else []
+    if any(w in text for w in ["不懂", "不会", "错题", "薄弱", "看不懂", "不理解", "懵", "没反应"]):
+        weak = _merge_unique(weak, [ctx["keyword"] or "当前知识点"])
+    prefs: list[str] = []
+    if any(w in text for w in ["导图", "结构", "框架", "关系"]):
+        prefs.append("mindmap")
+    if any(w in text for w in ["题", "练习", "测验", "例题"]):
+        prefs.append("quiz")
+    if any(w in text for w in ["讲义", "定义", "证明", "推导"]):
+        prefs.append("lecture_doc")
+    if any(w in text for w in ["PPT", "课件"]):
+        prefs.append("ppt")
+    level = "medium"
+    if any(w in text for w in ["基础差", "零基础", "完全不会", "看不懂", "不懂"]):
+        level = "foundation"
+    elif any(w in text for w in ["证明", "严格", "推导", "进阶", "考研"]):
+        level = "advanced"
+    style = "logical"
+    if any(w in text for w in ["图", "导图", "结构", "框架"]):
+        style = "visual-structured"
+    elif any(w in text for w in ["例题", "做题", "练习"]):
+        style = "practice-driven"
+    goal = f"掌握「{ctx['keyword']}」：先理解定义和条件，再完成例题与错题复盘"
+    emotion = "needs_support" if any(w in text for w in ["不会", "不懂", "看不懂", "懵", "一塌糊涂"]) else "focused"
+    return {
+        "knowledge_level": level,
+        "learning_goal": goal,
+        "cognitive_style": style,
+        "weak_points": weak,
+        "resource_preference": prefs or ["mindmap", "quiz", "lecture_doc"],
+        "emotion_tendency": emotion,
+        "last_topic": ctx["keyword"] if ctx["keyword"] != "高等数学" else (text[:20] or "高等数学"),
+        "raw_evidence": text[:240],
+    }
+
+
+def _update_demo_profile(message: str, source: str = "dialogue") -> dict[str, Any]:
+    profile = STATE["profile"]
+    old = dict(profile)
+    delta = _infer_profile_delta(message)
+    for key in ["knowledge_level", "learning_goal", "cognitive_style", "emotion_tendency", "last_topic", "raw_evidence"]:
+        if delta.get(key):
+            profile[key] = delta[key]
+    profile["weak_points"] = _merge_unique(_profile_list(profile.get("weak_points")), delta.get("weak_points", []))
+    profile["resource_preference"] = _merge_unique(_profile_list(profile.get("resource_preference")), delta.get("resource_preference", []))
+    profile["profile_source"] = source
+    profile["profile_version"] = int(profile.get("profile_version") or 0) + 1
+    profile["profile_confidence"] = min(0.95, max(0.45, 0.45 + profile["profile_version"] * 0.12))
+    profile["last_extracted_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    changed: list[dict[str, Any]] = []
+    for key in ["knowledge_level", "learning_goal", "cognitive_style", "emotion_tendency", "last_topic"]:
+        if old.get(key) != profile.get(key):
+            changed.append({
+                "field_name": key,
+                "old_value": old.get(key) or "未识别",
+                "new_value": profile.get(key) or "",
+                "reason": "根据最近对话自动识别学习状态",
+                "source_type": source,
+            })
+    if old.get("weak_points") != profile.get("weak_points"):
+        changed.append({"field_name": "weak_points", "old_value": " · ".join(_profile_list(old.get("weak_points"))) or "暂无", "new_value": " · ".join(profile["weak_points"]), "reason": "从提问主题和困难描述中识别薄弱点", "source_type": source})
+    if old.get("resource_preference") != profile.get("resource_preference"):
+        changed.append({"field_name": "resource_preference", "old_value": " · ".join(_profile_list(old.get("resource_preference"))) or "暂无", "new_value": " · ".join(profile["resource_preference"]), "reason": "从用户点击和表达中识别资源偏好", "source_type": source})
+    for item in changed:
+        item["id"] = str(uuid.uuid4())
+        item["created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    STATE["profile_changes"] = [*changed, *STATE["profile_changes"]][:30]
+    STATE["profile_versions"].insert(0, {
+        "id": str(profile["profile_version"]),
+        "version": profile["profile_version"],
+        "snapshot": dict(profile),
+        "trigger_source": source,
+        "confidence": profile["profile_confidence"],
+        "created_at": profile["last_extracted_at"],
+    })
+    STATE["profile_versions"] = STATE["profile_versions"][:10]
+    return dict(profile)
+
+
+def _build_demo_study_plan(topic: str) -> dict[str, Any]:
+    profile = STATE["profile"]
+    topic = _resolve_generation_topic(topic or profile.get("last_topic") or "函数极限")
+    ctx = _gaoshu_context(topic)
+    weak_points = _profile_list(profile.get("weak_points")) or [ctx["keyword"]]
+    prefs = _profile_list(profile.get("resource_preference")) or ["mindmap", "quiz", "lecture_doc"]
+    level = profile.get("knowledge_level") or "foundation"
+    level_hint = "基础重建" if level == "foundation" else ("进阶推导" if level == "advanced" else "概念到练习")
+    steps = [
+        {
+            "order": 1,
+            "title": f"定位教材章节：{ctx['chapter']}",
+            "description": f"围绕最近问题「{topic}」先找到教材位置，明确它和后续导数、连续或积分的关系。",
+            "reason": f"画像显示当前目标是：{profile.get('learning_goal') or '建立清晰知识框架'}。",
+            "resource_types": ["lecture_doc", "mindmap"],
+            "estimated_minutes": 12,
+            "practice": "读一遍讲义第一、二节，并用自己的话写出核心定义。",
+        },
+        {
+            "order": 2,
+            "title": f"补齐薄弱点：{weak_points[0]}",
+            "description": ctx["summary"],
+            "reason": "该知识点来自最近提问、错题或自动画像识别，不是固定模板。",
+            "resource_types": [t for t in ["mindmap", "lecture_doc"] if t in prefs] or ["mindmap"],
+            "estimated_minutes": 18,
+            "practice": "对照导图说出每个条件为什么必要。",
+        },
+        {
+            "order": 3,
+            "title": f"按「{level_hint}」完成例题",
+            "description": "按步骤拆题：先判断对象和适用条件，再选择化简、定义验证或对应定理。",
+            "reason": f"认知风格识别为 {profile.get('cognitive_style') or '待识别'}，因此优先给出结构化步骤和配套题。",
+            "resource_types": ["quiz", "lecture_doc"],
+            "estimated_minutes": 25,
+            "practice": "完成 3 道同主题题，错题自动写入错题本和画像。",
+        },
+        {
+            "order": 4,
+            "title": "复盘并生成下一轮资源",
+            "description": f"重点检查：{'; '.join(ctx['pitfalls'][:3])}。",
+            "reason": "把错因回流到学习画像，下一次路径会继续变化。",
+            "resource_types": ["quiz", "study_plan"],
+            "estimated_minutes": 15,
+            "practice": "把错题归因到定义、条件、计算或审题，并再次提问薄弱处。",
+        },
+    ]
+    return {
+        "title": f"{topic} · 个性化学习路径",
+        "profile_summary": f"基于最近问题「{topic}」、画像版本 #{profile.get('profile_version') or 0}、薄弱点 {', '.join(weak_points[:3])} 生成。",
+        "steps": steps,
+        "recommended_topics": _merge_unique([ctx["keyword"], *weak_points, ctx["chapter"]], [], 5),
+        "next_action": f"先生成「{steps[0]['title']}」讲义，再完成步骤 3 的配套练习。",
+        "provider": STATE.get("llm_provider") or "demo",
+        "model": STATE.get("spark_model") or "demo",
     }
 
 
@@ -557,17 +739,12 @@ def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> 
             ],
         }
     if resource_type == "study_plan":
+        plan = _build_demo_study_plan(topic or "函数极限")
         return {
             **base,
-            "study_plan": {
-                "steps": [
-                    {"title": "理解概念", "description": "阅读讲义并圈出不懂的术语"},
-                    {"title": "结构梳理", "description": "查看思维导图，明确知识点关系"},
-                    {"title": "完成练习", "description": "做 3 道配套题并记录错题"},
-                    {"title": "复盘提升", "description": "根据学习报告继续追问薄弱点"},
-                ]
-            },
-            "content": "1. 理解概念\n2. 结构梳理\n3. 完成练习\n4. 复盘提升",
+            "study_plan": plan,
+            "plan": plan.get("steps", []),
+            "content": "\n".join(f"{s.get('order', i + 1)}. {s.get('title')} - {s.get('description')}" for i, s in enumerate(plan.get("steps", []))),
         }
     return {
         **base,
@@ -801,6 +978,7 @@ def dashboard(course_id: int = 1):
 def ask(body: AskRequest):
     question = body.question or body.message or "当前学习主题"
     provider, model, answer = _call_llm("", question)
+    profile = _update_demo_profile(question, "dialogue")
     if provider != "mock":
         answer = answer + "\n\n依据：内置教材《高数上.pdf》课程上下文。"
     session = {"id": body.session_id or str(uuid.uuid4()), "title": question[:30], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -828,6 +1006,16 @@ def ask(body: AskRequest):
         "grounding_score": 0.85,
         "grounding": {"grounding_score": 0.85, "risk_level": "low", "unsupported_claims": []},
         "content_safety": {"safe": True, "risk_level": "low"},
+        "student_profile": profile,
+        "profile_delta": {
+            "knowledge_level": profile.get("knowledge_level"),
+            "learning_goal": profile.get("learning_goal"),
+            "cognitive_style": profile.get("cognitive_style"),
+            "weak_points": profile.get("weak_points"),
+            "resource_preference": profile.get("resource_preference"),
+            "profile_version": profile.get("profile_version"),
+            "profile_confidence": profile.get("profile_confidence"),
+        },
         "resource_package": {
             "title": f"{question[:20]}高数资源包",
             "items": [{"type": "mindmap", "title": "导图"}, {"type": "quiz", "title": "练习题"}, {"type": "lecture_doc", "title": "讲义"}],
@@ -878,6 +1066,8 @@ def ask_stream(body: AskRequest):
             "model": data["model"],
             "citations": data["citations"],
             "refs": data["refs"],
+            "student_profile": data.get("student_profile", {}),
+            "profile_delta": data.get("profile_delta", {}),
             "resource_suggestions": data["resource_suggestions"],
             "generated_artifacts": data["generated_artifacts"],
         }
@@ -1045,27 +1235,38 @@ def quiz_submit(payload: dict[str, Any]):
 
 @app.get("/api/profiles/current")
 def current_profile():
-    return {"ok": True, "profile": {"major": "高等数学上册复习", "knowledge_level": "medium", "cognitive_style": "logical", "pace_preference": "moderate", "weak_points": ["函数极限", "洛必达法则", "积分换元"]}}
+    profile = dict(STATE["profile"])
+    if not profile.get("profile_version"):
+        profile["knowledge_level"] = profile.get("knowledge_level") or "待识别"
+        profile["cognitive_style"] = profile.get("cognitive_style") or "待识别"
+        profile["learning_goal"] = profile.get("learning_goal") or "完成一次对话后自动识别"
+    return {"ok": True, "profile": profile, "data": {"profile": profile}, **profile}
 
 
 @app.get("/api/profiles/history")
 def profile_history():
-    return []
+    data = {"versions": STATE["profile_versions"], "change_logs": STATE["profile_changes"]}
+    return {"ok": True, "data": data, **data}
 
 
 @app.post("/api/profiles/me/extract")
 def profile_extract(payload: dict[str, Any]):
-    return {"ok": True, "profile": {"knowledge_level": "medium", "cognitive_style": "balanced"}}
+    profile = _update_demo_profile(str(payload.get("message") or payload.get("text") or ""), "manual_dialogue")
+    return {"ok": True, "profile": profile, "data": {"profile": profile}, **profile}
 
 
 @app.post("/api/profiles/me/confirm")
 def profile_confirm(payload: dict[str, Any] | None = None):
-    return {"ok": True}
+    STATE["profile"]["profile_source"] = "confirmed"
+    return {"ok": True, "profile": STATE["profile"], "data": {"profile": STATE["profile"]}}
 
 
 @app.post("/api/profiles/history/{version_id}/restore")
 def profile_restore(version_id: str):
-    return {"ok": True}
+    item = next((v for v in STATE["profile_versions"] if str(v.get("id")) == str(version_id) or str(v.get("version")) == str(version_id)), None)
+    if item and isinstance(item.get("snapshot"), dict):
+        STATE["profile"].update(item["snapshot"])
+    return {"ok": True, "profile": STATE["profile"], "data": {"profile": STATE["profile"]}}
 
 
 @app.get("/api/courses")
