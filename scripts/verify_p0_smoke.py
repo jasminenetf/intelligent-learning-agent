@@ -11,7 +11,7 @@ import urllib.request
 BASE = os.environ.get("P0_SMOKE_BASE", "http://127.0.0.1:8010")
 DEMO_USERNAME = os.environ.get("P0_DEMO_USERNAME", "demo_student")
 DEMO_PASSWORD = os.environ.get("P0_DEMO_PASSWORD", "demo_pass_12345")
-DEMO_COURSE_NAME = os.environ.get("P0_DEMO_COURSE_NAME", "人工智能导论 - 演示课程")
+DEMO_COURSE_NAME = os.environ.get("P0_DEMO_COURSE_NAME", "高等数学上册")
 REQUIRE_DEMO = os.environ.get("P0_REQUIRE_DEMO", "0").lower() in {"1", "true", "yes", "on"}
 
 
@@ -111,8 +111,8 @@ def _validate_demo_citations(payload: dict, fails: list[str], label: str) -> Non
         fails.append(f"{label} missing citations for seeded course")
         return
     text = json.dumps(citations, ensure_ascii=False)
-    if "过拟合" not in text and "正则化" not in text and "AI导论" not in text:
-        fails.append(f"{label} citations do not reference seeded AI course materials")
+    if "高数上.pdf" not in text and "高等数学" not in text and "函数与极限" not in text:
+        fails.append(f"{label} citations do not reference seeded high-math course materials")
     else:
         print(f"[PASS] {label} citations from seeded course")
 
@@ -122,7 +122,7 @@ def _find_demo_course_id(courses: list[dict]) -> int | None:
         if course.get("name") == DEMO_COURSE_NAME:
             return course.get("id")
     for course in courses:
-        if "演示课程" in str(course.get("name", "")):
+        if "演示课程" in str(course.get("name", "")) or "高等数学" in str(course.get("name", "")):
             return course.get("id")
     return None
 
@@ -156,7 +156,7 @@ def _run_demo_smoke(fails: list[str]) -> None:
         "/api/app/ask",
         {
             "course_id": course_id,
-            "question": "请结合课程资料解释过拟合与正则化，并推荐下一步学习资源。",
+            "question": "请结合课程资料解释函数极限和左右极限，并推荐下一步学习资源。",
             "top_k": 5,
         },
         demo_token,
@@ -209,7 +209,7 @@ def main() -> int:
         print("[PASS] GET /api/app/bootstrap (guest)")
 
     # no-login demo: settings test is open
-    st, _ = post("/api/settings/test-llm", {"provider": "spark"})
+    st, _ = post("/api/settings/test-llm", {"provider": "mock"})
     if st != 200:
         fails.append(f"settings test-llm without auth expected 200 got {st}")
     else:
@@ -301,7 +301,7 @@ def main() -> int:
                 "/api/app/ask",
                 {
                     "course_id": course_id,
-                    "question": "请结合课程资料解释过拟合与正则化，并推荐下一步学习资源。",
+                    "question": "请结合课程资料解释函数极限和左右极限，并推荐下一步学习资源。",
                     "top_k": 5,
                 },
                 token,
@@ -326,7 +326,7 @@ def main() -> int:
             {
                 "course_id": 1,
                 "topic": "P0 Smoke 知识点",
-                "question_text": "什么是过拟合？",
+                "question_text": "什么是函数极限？",
                 "selected_answer": "A",
                 "correct_answer": "B",
                 "is_correct": False,

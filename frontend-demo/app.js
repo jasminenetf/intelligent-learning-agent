@@ -6,7 +6,7 @@ const S = {
   token: '',
   user: null,
   courseId: 1,
-  courseName: '人工智能导论',
+  courseName: '高等数学上册',
   courses: [],
   sidebarCollapsed: false,
   resourceJobId: null,

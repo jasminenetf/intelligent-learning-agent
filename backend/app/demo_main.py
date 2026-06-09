@@ -27,6 +27,20 @@ ENV_PATH = APP_DIR / ".env"
 GENERATED_DIR = APP_DIR / "data" / "generated"
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _load_local_env() -> None:
+    if not ENV_PATH.exists():
+        return
+    for raw in ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_local_env()
+
 app = FastAPI(title="智能学习Agent Demo Backend", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -44,14 +58,91 @@ STATE: dict[str, Any] = {
     "spark_api_key": os.getenv("SPARK_API_PASSWORD", os.getenv("SPARK_API_KEY", "")),
     "spark_base_url": os.getenv("SPARK_BASE_URL", "https://spark-api-open.xf-yun.com/v1"),
     "spark_model": os.getenv("SPARK_MODEL", "generalv3.5"),
+    "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", os.getenv("SPARK_TIMEOUT_SECONDS", "60"))),
     "course_id": 1,
-    "course_name": "默认课程",
+    "course_name": "高等数学上册",
     "sessions": [],
     "resources": [],
     "resource_jobs": {},
-    "files": [],
-    "wrong_book": [],
-    "bookmarks": [],
+    "extra_courses": [],
+    "files": [
+        {
+            "id": "gaoshu-pdf",
+            "course_id": 1,
+            "original_filename": "高数上.pdf",
+            "status": "ready",
+            "content_type": "application/pdf",
+            "chunks": 128,
+            "indexed_chunks": 128,
+            "source": r"C:\Users\zhang\Desktop\高数上.pdf",
+        }
+    ],
+    "wrong_book": [
+        {
+            "knowledge_point": "函数极限",
+            "question": "极限存在是否要求函数在该点有定义？",
+            "selected_answer": "要求",
+            "correct_answer": "不要求",
+            "explanation": "极限研究的是自变量趋近该点时函数值的变化趋势。",
+        }
+    ],
+    "bookmarks": [
+        {"resource_id": "gaoshu-outline", "title": "高等数学上册章节导学"}
+    ],
+}
+
+GAOSHU_COURSE_DESCRIPTION = (
+    "内置《高数上.pdf》学习辅助课程，覆盖函数与极限、导数与微分、"
+    "微分中值定理与导数应用、不定积分、定积分、定积分应用和微分方程。"
+)
+
+GAOSHU_CHAPTERS = [
+    {"title": "第一章 函数与极限", "page": 16, "points": ["函数", "数列极限", "函数极限", "无穷小与无穷大", "连续性"]},
+    {"title": "第二章 导数与微分", "page": 88, "points": ["导数定义", "求导法则", "高阶导数", "隐函数求导", "微分"]},
+    {"title": "第三章 微分中值定理与导数的应用", "page": 140, "points": ["罗尔定理", "拉格朗日中值定理", "洛必达法则", "单调性", "极值与最值"]},
+    {"title": "第四章 不定积分", "page": 199, "points": ["原函数", "基本积分公式", "换元积分法", "分部积分法"]},
+    {"title": "第五章 定积分", "page": 239, "points": ["定积分定义", "可积条件", "微积分基本公式", "定积分换元法", "定积分分部积分"]},
+    {"title": "第六章 定积分的应用", "page": 289, "points": ["面积", "体积", "弧长", "物理应用"]},
+    {"title": "第七章 微分方程", "page": 312, "points": ["可分离变量方程", "齐次方程", "一阶线性微分方程", "二阶常系数线性方程"]},
+]
+
+GAOSHU_TOPIC_HINTS = {
+    "极限": {
+        "chapter": "第一章 函数与极限",
+        "summary": "极限刻画变量趋近某个过程时函数值或数列项的稳定趋势，是连续、导数和积分的基础。",
+        "steps": ["先判断自变量趋近方式", "化简表达式并消去无意义项", "必要时比较左右极限或使用等价无穷小"],
+        "pitfalls": ["把函数值等同于极限", "忽略左右极限", "未验证等价无穷小适用条件"],
+    },
+    "导数": {
+        "chapter": "第二章 导数与微分",
+        "summary": "导数表示函数在一点的瞬时变化率，几何意义是曲线在该点的切线斜率。",
+        "steps": ["明确函数复合结构", "选择求导法则", "代入点值并解释实际或几何意义"],
+        "pitfalls": ["复合函数漏乘内层导数", "隐函数求导漏写 y'", "高阶导数符号混乱"],
+    },
+    "微分": {
+        "chapter": "第二章 导数与微分",
+        "summary": "微分用线性主部近似函数增量，适合做近似计算和误差分析。",
+        "steps": ["先求导数", "写出 dy=f'(x)dx", "结合题目给定的增量解释近似"],
+        "pitfalls": ["把 dy 与 Δy 完全等同", "忘记说明近似条件"],
+    },
+    "洛必达": {
+        "chapter": "第三章 微分中值定理与导数的应用",
+        "summary": "洛必达法则用于处理 0/0 或 ∞/∞ 型未定式，使用前必须确认适用条件。",
+        "steps": ["确认未定式类型", "分别对分子分母求导", "求导后重新判断极限"],
+        "pitfalls": ["不是 0/0 或 ∞/∞ 也直接用", "循环求导后不检查极限是否存在"],
+    },
+    "积分": {
+        "chapter": "第四、五章 不定积分与定积分",
+        "summary": "不定积分关注原函数族，定积分关注区间上的累积量，两者由微积分基本公式联系。",
+        "steps": ["识别是求原函数还是累积量", "匹配基本公式或换元/分部方法", "定积分注意上下限和几何意义"],
+        "pitfalls": ["不定积分漏写常数 C", "换元后上下限未同步变化", "分部积分 u 与 dv 选择不当"],
+    },
+    "微分方程": {
+        "chapter": "第七章 微分方程",
+        "summary": "微分方程用未知函数及其导数描述变化规律，先分类再选择解法。",
+        "steps": ["判断方程类型", "按类型套用分离变量或线性方程方法", "代入初值确定常数"],
+        "pitfalls": ["未分离变量就积分", "通解漏常数", "初值条件代入位置错误"],
+    },
 }
 
 
@@ -82,6 +173,8 @@ def _write_env(updates: dict[str, str]) -> None:
 
 def _provider_config(provider: str) -> tuple[str, str, str]:
     provider = (provider or STATE["llm_provider"] or "mock").lower()
+    if provider == "mock":
+        return "mock", "", "", "mock"
     if provider == "spark":
         return "spark", STATE["spark_api_key"], STATE["spark_base_url"], STATE["spark_model"]
     if provider == "deepseek":
@@ -93,11 +186,32 @@ def _provider_config(provider: str) -> tuple[str, str, str]:
     return "mock", "", "", "mock"
 
 
+def _gaoshu_context(topic: str) -> dict[str, Any]:
+    text = (topic or "").lower()
+    for key, ctx in GAOSHU_TOPIC_HINTS.items():
+        if key.lower() in text:
+            return {"keyword": key, **ctx}
+    if any(word in text for word in ["函数", "连续", "无穷小", "无穷大"]):
+        return {"keyword": "极限", **GAOSHU_TOPIC_HINTS["极限"]}
+    return {
+        "keyword": "高等数学",
+        "chapter": "高等数学上册",
+        "summary": "高等数学上册围绕极限、导数、积分和微分方程建立连续变化问题的分析工具。",
+        "steps": ["先定位教材章节", "理解定义和定理适用条件", "用例题验证方法", "通过练习巩固薄弱点"],
+        "pitfalls": ["只背公式不看条件", "计算步骤跳跃", "错题没有回到概念复盘"],
+    }
+
+
 def _mock_answer(question: str) -> str:
+    ctx = _gaoshu_context(question)
     return (
-        "我已收到你的问题：" + (question or "当前学习主题") + "。\n\n"
-        "当前可以直接使用免登录学习流程。你可以先在账户与设置中填写科大讯飞或 DeepSeek API；"
-        "未配置真实 API 时，系统会使用本地演示回答，保证页面可用。"
+        f"我会按《高等数学上册》的「{ctx['chapter']}」来讲：{question or ctx['keyword']}。\n\n"
+        f"核心理解：{ctx['summary']}\n\n"
+        "建议按这几步学：\n"
+        + "\n".join(f"{i + 1}. {step}" for i, step in enumerate(ctx["steps"]))
+        + "\n\n容易出错的地方："
+        + "；".join(ctx["pitfalls"])
+        + "。\n\n依据：内置教材《高数上.pdf》章节目录与本地高数学习模板。"
     )
 
 
@@ -107,10 +221,16 @@ def _call_llm(provider: str, question: str, model_override: str = "") -> tuple[s
     if provider == "mock" or not api_key:
         return "mock", model, _mock_answer(question)
     try:
-        client = OpenAI(base_url=base_url, api_key=api_key, timeout=20, max_retries=1)
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=STATE["llm_timeout_seconds"], max_retries=1)
         resp = client.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": question}],
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是《高等数学上册》课程学习辅助教师。请用中文回答，步骤清晰，说明适用条件、常见误区，并给出复习建议。",
+                },
+                {"role": "user", "content": question},
+            ],
             max_tokens=600,
         )
         return provider, model, resp.choices[0].message.content or "已连接模型，但没有返回内容。"
@@ -163,48 +283,54 @@ def _resource_label(resource_type: str) -> str:
 
 def _demo_mindmap(topic: str) -> str:
     safe_topic = (topic or "当前学习主题").replace('"', "'")
+    ctx = _gaoshu_context(safe_topic)
+    chapter = str(ctx["chapter"]).replace('"', "'")
+    steps = [str(s).replace('"', "'") for s in ctx["steps"]]
+    pitfalls = [str(s).replace('"', "'") for s in ctx["pitfalls"]]
     return "\n".join([
         "mindmap",
         f"  root(({safe_topic}))",
+        "    教材定位",
+        f"      {chapter}",
+        "      高数上.pdf",
         "    核心概念",
-        "      定义与背景",
-        "      关键术语",
-        "    学习重点",
-        "      必须掌握的知识点",
-        "      常见误区",
-        "    学习方法",
-        "      先看讲义",
-        "      再做练习",
-        "      最后复盘错题",
-        "    应用场景",
-        "      课堂理解",
-        "      作业与考试",
+        f"      {ctx['summary'][:34]}",
+        "    解题步骤",
+        *[f"      {step[:34]}" for step in steps],
+        "    常见误区",
+        *[f"      {pitfall[:34]}" for pitfall in pitfalls],
+        "    巩固方式",
+        "      例题复盘",
+        "      配套练习",
+        "      错题归因",
     ])
 
 
 def _demo_quiz(topic: str) -> list[dict[str, Any]]:
     title = topic or "当前学习主题"
+    ctx = _gaoshu_context(title)
+    keyword = ctx["keyword"]
     return [
         {
             "question": f"学习「{title}」时，第一步最应该做什么？",
-            "options": ["先理解核心概念", "直接背答案", "跳过教材", "只看结果"],
+            "options": ["先定位定义和适用条件", "直接套公式不看题型", "跳过教材例题", "只记最终答案"],
             "answer": 0,
-            "knowledge_point": title,
-            "explanation": "先建立概念框架，后续做题和迁移应用才更稳定。",
+            "knowledge_point": keyword,
+            "explanation": f"《高数上》学习要先回到{ctx['chapter']}中的定义、定理条件和例题结构。",
         },
         {
-            "question": f"关于「{title}」的学习，下列哪种做法更适合巩固？",
-            "options": ["只读一遍", "结合例题和练习验证理解", "完全不复盘", "只记英文缩写"],
-            "answer": 1,
-            "knowledge_point": title,
-            "explanation": "练习和复盘可以暴露薄弱点，并帮助系统更新学习画像。",
+            "question": f"关于「{keyword}」的巩固，下列哪种做法更可靠？",
+            "options": ["结合例题拆步骤并做变式练习", "只背一个结论", "完全不检查条件", "只看答案不演算"],
+            "answer": 0,
+            "knowledge_point": keyword,
+            "explanation": "高数题目容易在条件、变形和步骤上出错，例题拆解加变式练习更稳。",
         },
         {
-            "question": "如果回答缺少课程依据，系统应该如何处理？",
-            "options": ["继续编造", "明确提示依据不足", "隐藏引用", "跳过验证"],
-            "answer": 1,
-            "knowledge_point": "RAG 防幻觉",
-            "explanation": "防幻觉要求回答尽量基于课程资料，并在依据不足时明确说明。",
+            "question": f"下列哪项属于「{keyword}」学习中的常见风险？",
+            "options": [ctx["pitfalls"][0], "先说明依据", "写出关键步骤", "复盘错题原因"],
+            "answer": 0,
+            "knowledge_point": keyword,
+            "explanation": "测验会把常见误区写入错题反馈，方便后续生成复习路径。",
         },
     ]
 
@@ -374,7 +500,7 @@ def test_llm(body: LLMTestRequest):
 @app.get("/api/app/bootstrap")
 def bootstrap():
     provider, _, _, model = _provider_config(STATE["llm_provider"])
-    course = {"id": STATE["course_id"], "name": STATE["course_name"], "description": "打开即用的默认课程"}
+    course = {"id": STATE["course_id"], "name": STATE["course_name"], "description": GAOSHU_COURSE_DESCRIPTION}
     payload = {
         "ok": True,
         "app_ready": True,
@@ -410,11 +536,11 @@ def bootstrap():
 def dashboard(course_id: int = 1):
     data = {
         "ok": True,
-        "course": {"id": course_id, "name": STATE["course_name"]},
-        "stats": {"questions": len(STATE["sessions"]), "resources": len(STATE["resources"]), "mastery": 76},
-        "knowledge_base": {"chunks_count": len(STATE["files"]) * 12, "vector_count": len(STATE["files"]) * 12, "status": "ready"},
+        "course": {"id": course_id, "name": STATE["course_name"], "description": GAOSHU_COURSE_DESCRIPTION},
+        "stats": {"questions": len(STATE["sessions"]), "resources": len(STATE["resources"]), "mastery": 72},
+        "knowledge_base": {"chunks_count": 128 + max(0, len(STATE["files"]) - 1) * 12, "vector_count": 128 + max(0, len(STATE["files"]) - 1) * 12, "status": "ready"},
         "recent_resources": STATE["resources"][-5:],
-        "recommendations": ["先填写 API", "进入会话中心直接提问", "按需生成讲义/PPT/测验"],
+        "recommendations": ["先问一个高数知识点", "点击生成思维导图梳理章节", "启动测验并把错题加入复习路径"],
     }
     return {"ok": True, "data": data, **data}
 
@@ -423,16 +549,18 @@ def dashboard(course_id: int = 1):
 def ask(body: AskRequest):
     question = body.question or body.message or "当前学习主题"
     provider, model, answer = _call_llm("", question)
+    if provider != "mock":
+        answer = answer + "\n\n依据：内置教材《高数上.pdf》课程上下文。"
     session = {"id": body.session_id or str(uuid.uuid4()), "title": question[:30], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     if not any(s["id"] == session["id"] for s in STATE["sessions"]):
         STATE["sessions"].append(session)
     citations = [
-        {"source": "本地课程知识库", "content": "免登录 Demo 默认知识库，可上传资料后扩展。", "score": 1.0},
+        {"source": "高数上.pdf", "content": "内置教材章节：函数与极限、导数与微分、微分中值定理与导数应用、不定积分、定积分、定积分应用、微分方程。", "score": 1.0},
         {"source": "模型实时回答", "content": "由当前配置模型或 Mock fallback 生成。", "score": 1.0},
     ]
     traces = [
         {"agent": "TutorAgent", "phase": "planning", "status": "completed", "summary": "免登录 Demo 已接收问题", "latency_ms": 0},
-        {"agent": "InformerAgent", "phase": "retrieving", "status": "completed", "summary": "已读取默认课程上下文", "latency_ms": 0},
+        {"agent": "InformerAgent", "phase": "retrieving", "status": "completed", "summary": "已读取《高数上.pdf》课程上下文", "latency_ms": 0},
         {"agent": "VerifierAgent", "phase": "verifying", "status": "completed", "summary": "演示链路校验通过", "latency_ms": 0},
     ]
     payload = {
@@ -449,7 +577,7 @@ def ask(body: AskRequest):
         "grounding": {"grounding_score": 0.85, "risk_level": "low", "unsupported_claims": []},
         "content_safety": {"safe": True, "risk_level": "low"},
         "resource_package": {
-            "title": f"{question[:20]}资源包",
+            "title": f"{question[:20]}高数资源包",
             "items": [{"type": "lecture_doc", "title": "讲义"}, {"type": "mindmap", "title": "导图"}],
             "item_count": 2,
             "agent_count": 3,
@@ -550,7 +678,7 @@ def resources_generate(body: dict[str, Any]):
 
     trace = [
         {"agent": "Planner Agent", "status": "completed", "message": "已分析学习主题与资源类型"},
-        {"agent": "Retriever Agent", "status": "completed", "message": "已读取默认课程上下文"},
+        {"agent": "Retriever Agent", "status": "completed", "message": "已读取《高数上.pdf》课程上下文"},
         {"agent": "Generator Agent", "status": "completed", "message": f"已生成 {len(resources)} 类资源"},
         {"agent": "Verifier Agent", "status": "completed", "message": "已完成内容质量校验"},
     ]
@@ -615,7 +743,7 @@ def get_session(session_id: str):
 
 @app.get("/api/analytics/progress")
 def progress():
-    return {"items": [{"name": "基础理解", "value": 76}, {"name": "应用能力", "value": 68}], "overall": 74}
+    return {"items": [{"name": "函数与极限", "value": 70}, {"name": "导数与微分", "value": 76}, {"name": "积分方法", "value": 62}], "overall": 69}
 
 
 @app.get("/api/analytics/wrong-book")
@@ -646,19 +774,20 @@ def add_audit(payload: dict[str, Any]):
 
 @app.post("/api/analytics/review-plan")
 def review_plan(payload: dict[str, Any]):
-    return {"ok": True, "plan": [{"title": "复习核心概念", "minutes": 20}, {"title": "完成针对练习", "minutes": 30}]}
+    return {"ok": True, "plan": [{"title": "复习极限定义与左右极限", "minutes": 20}, {"title": "完成导数和积分针对练习", "minutes": 30}]}
 
 
 @app.get("/api/app/learning-report")
 def learning_report(course_id: int = 1):
     data = {
-        "summary": "当前学习状态良好，建议继续围绕薄弱知识点提问并生成练习。",
-        "score": 76,
-        "weaknesses": ["概念迁移", "综合应用"],
-        "mastery_overview": {"average_score": 0.76, "weak_count": 2},
+        "summary": "当前已进入《高等数学上册》复习模式，建议优先巩固极限条件、导数应用和积分方法。",
+        "score": 69,
+        "weaknesses": ["函数极限", "洛必达法则", "积分换元"],
+        "mastery_overview": {"average_score": 0.69, "weak_count": 3},
         "mastery_items": [
-            {"knowledge_point": "概念理解", "mastery_score": 0.78},
-            {"knowledge_point": "综合应用", "mastery_score": 0.62},
+            {"knowledge_point": "函数极限", "mastery_score": 0.70},
+            {"knowledge_point": "导数与微分", "mastery_score": 0.76},
+            {"knowledge_point": "积分方法", "mastery_score": 0.62},
         ],
     }
     return {"ok": True, "data": data, **data}
@@ -676,7 +805,7 @@ def quiz_submit(payload: dict[str, Any]):
 
 @app.get("/api/profiles/current")
 def current_profile():
-    return {"ok": True, "profile": {"major": "未设置", "knowledge_level": "medium", "cognitive_style": "balanced", "pace_preference": "normal"}}
+    return {"ok": True, "profile": {"major": "高等数学上册复习", "knowledge_level": "medium", "cognitive_style": "logical", "pace_preference": "moderate", "weak_points": ["函数极限", "洛必达法则", "积分换元"]}}
 
 
 @app.get("/api/profiles/history")
@@ -701,13 +830,19 @@ def profile_restore(version_id: str):
 
 @app.get("/api/courses")
 def courses():
-    return [{"id": 1, "name": STATE["course_name"], "description": "默认课程，可直接使用"}]
+    primary = {"id": 1, "name": STATE["course_name"], "description": GAOSHU_COURSE_DESCRIPTION, "chapters": GAOSHU_CHAPTERS}
+    return [primary, *STATE["extra_courses"]]
 
 
 @app.post("/api/courses")
 def create_course(payload: dict[str, Any]):
-    STATE["course_name"] = payload.get("name") or "新课程"
-    return {"id": 1, "name": STATE["course_name"], "description": payload.get("description", "")}
+    course = {
+        "id": len(STATE["extra_courses"]) + 2,
+        "name": payload.get("name") or "新课程",
+        "description": payload.get("description", ""),
+    }
+    STATE["extra_courses"].append(course)
+    return course
 
 
 @app.get("/api/courses/{course_id}/files")
