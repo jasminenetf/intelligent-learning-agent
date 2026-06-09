@@ -707,6 +707,171 @@ def _demo_quiz(topic: str) -> list[dict[str, Any]]:
     ]
 
 
+def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
+    ctx = _gaoshu_context(topic)
+    title = topic or ctx["keyword"] or "当前主题"
+    weak_points = _profile_list(STATE.get("profile", {}).get("weak_points")) or [ctx["keyword"]]
+    student_level = STATE.get("profile", {}).get("knowledge_level") or "foundation"
+    keyword = ctx.get("keyword", "")
+    if keyword == "积分":
+        example = {
+            "problem": "例题：计算 ∫ 2x dx，并解释为什么答案后面要加 C。",
+            "solution": [
+                "识别对象：这是不定积分，要求找一个导数为 2x 的原函数。",
+                "回忆基本关系：如果 F'(x)=f(x)，那么 ∫f(x)dx=F(x)+C。",
+                "寻找原函数：x² 的导数是 2x，所以一个原函数是 x²。",
+                "写出答案：∫2x dx = x² + C。",
+                "解释 C：因为 x²+1、x²-3 的导数也都是 2x，所以要用 C 表示所有原函数。",
+            ],
+        }
+    elif keyword == "极限":
+        example = {
+            "problem": "例题：判断 lim(x→1) (x²-1)/(x-1) 的值。",
+            "solution": [
+                "先看能否直接代入：代入 x=1 得到 0/0，不能直接得答案。",
+                "因式分解：x²-1=(x-1)(x+1)。",
+                "在 x≠1 的去心邻域内约掉 x-1，原式等于 x+1。",
+                "再看趋近趋势：当 x→1 时，x+1→2。",
+                "结论：极限是 2；注意这不要求原函数在 x=1 处有定义。",
+            ],
+        }
+    elif keyword == "导数":
+        example = {
+            "problem": "例题：求 f(x)=x² 在 x=3 处的导数，并解释含义。",
+            "solution": [
+                "识别对象：导数表示瞬时变化率，也就是曲线在该点的切线斜率。",
+                "先求导函数：f'(x)=2x。",
+                "代入 x=3：f'(3)=6。",
+                "解释含义：在 x=3 附近，x 每增加一点，函数值大约以 6 倍速度变化。",
+            ],
+        }
+    else:
+        example = {
+            "problem": f"例题：围绕「{title}」完成一道基础题，并写出每一步依据。",
+            "solution": [
+                "先读题，圈出关键词和限制条件。",
+                "判断该题对应哪个定义、公式或定理。",
+                "逐步计算或证明，每一步旁边写出依据。",
+                "回到题目问法，写出完整结论。",
+            ],
+        }
+    return [
+        {
+            "title": "这节课先解决什么问题",
+            "student_problem": f"学生现在不是缺一个结论，而是不知道「{title}」到底在研究什么、题目中哪些条件必须先看。",
+            "bullets": [
+                f"本节目标：把「{title}」从概念、条件、例题到练习完整讲通",
+                f"当前薄弱点：{', '.join(weak_points[:3])}",
+                f"适配基础：{student_level}，先用直观语言，再上数学表达",
+            ],
+            "teacher_script": (
+                f"今天不先背公式。我们先回答一个问题：遇到「{title}」时，题目到底要我们判断什么。"
+                "只要这个问题想清楚，后面的公式、例题和错题都会变得有位置。"
+            ),
+            "board_work": ["写下本节三问：研究对象是什么？条件是什么？怎么算/怎么证？"],
+            "check_question": "你看到一道题时，第一眼会先找公式，还是先找研究对象和条件？",
+        },
+        {
+            "title": "用直观语言讲清核心概念",
+            "student_problem": "学生常把定义当成一串符号，没理解它在描述一个变化过程。",
+            "bullets": [
+                ctx["summary"],
+                "先看自变量或对象怎么变化，再看结果是否稳定靠近某个确定值",
+                "不要一上来就套公式，先用一句人话说出题目在问什么",
+            ],
+            "teacher_script": (
+                f"把「{title}」先翻译成人话：它不是让我们机械计算，而是观察一个过程。"
+                "数学符号只是把这个过程写得严格。"
+            ),
+            "board_work": [
+                f"教材位置：{ctx['chapter']}",
+                "直观表达：对象变化 -> 结果趋势 -> 是否稳定",
+            ],
+            "check_question": "如果不用公式，你能用一句话解释这个概念吗？",
+        },
+        {
+            "title": "把定义拆成能做题的条件",
+            "student_problem": "学生会背定义，但做题时不知道哪些条件对应哪一步。",
+            "bullets": [
+                f"第一步：{ctx['steps'][0]}",
+                f"第二步：{ctx['steps'][1] if len(ctx['steps']) > 1 else '选择合适方法'}",
+                f"第三步：{ctx['steps'][2] if len(ctx['steps']) > 2 else '回到定义或定理检查结论'}",
+            ],
+            "teacher_script": (
+                "定义不是背诵材料，而是一张检查表。每做一步，都要能说出自己检查了哪个条件。"
+            ),
+            "board_work": [
+                "条件检查表：对象 / 范围 / 趋势 / 方法 / 结论",
+                "每一步旁边写出依据，防止跳步",
+            ],
+            "check_question": "这道题如果不能直接代入，下一步应该检查什么？",
+        },
+        {
+            "title": "带学生做一道完整例题",
+            "student_problem": "学生不会通常卡在中间步骤，不知道为什么要这样变形。",
+            "bullets": [
+                example["problem"],
+                "先读题圈出关键词，再判断适用条件",
+                "每一步写清楚：为什么能这么做，得到什么结论",
+            ],
+            "teacher_script": (
+                "讲例题时不要只给答案。先停在读题阶段，让学生说出已知条件；再一步一步把条件变成做题动作。"
+            ),
+            "board_work": [
+                *example["solution"],
+            ],
+            "check_question": "这一步用了哪个定义或定理？如果这个条件不存在，还能这样做吗？",
+        },
+        {
+            "title": "专门纠正常见误区",
+            "student_problem": "学生不是没学，而是用错条件、跳过依据或把相近概念混在一起。",
+            "bullets": ctx["pitfalls"][:3],
+            "teacher_script": (
+                "错题不是简单地重做一遍。每个错误都要归因：是概念错、条件漏、计算错，还是审题错。"
+            ),
+            "board_work": [
+                "错因分类：概念 / 条件 / 方法 / 计算 / 表达",
+                "把今天的错题归到其中一类",
+            ],
+            "check_question": "你最容易犯的是哪一种错？下一题准备怎么避免？",
+        },
+        {
+            "title": "课堂即时练习",
+            "student_problem": "听懂不等于会做，必须马上用题目检查理解。",
+            "bullets": [
+                "练习 1：判断题，检查概念边界",
+                "练习 2：基础计算/证明，检查步骤",
+                "练习 3：错因复盘题，检查是否能解释为什么错",
+            ],
+            "teacher_script": (
+                "练习不要堆难题。先用一题确认概念，再用一题确认步骤，最后用一题确认学生能解释错因。"
+            ),
+            "board_work": [
+                "每题提交后写一句：我这题检查了什么条件？",
+                "错题自动加入错题本，生成下一轮复习路径",
+            ],
+            "check_question": "如果只让你复习一个点，你会选定义、条件还是例题步骤？",
+        },
+        {
+            "title": "课后怎么继续学",
+            "student_problem": "学生课后容易只看答案，不知道下一步学什么资料。",
+            "bullets": [
+                "先看讲义：补概念和条件",
+                "再看思维导图：建立知识关系",
+                "最后做练习题：把错题回流到画像和学习路径",
+            ],
+            "teacher_script": (
+                "课后顺序不要反：先补理解，再看结构，最后刷题。否则题做多了也只是在重复错误。"
+            ),
+            "board_work": [
+                "今日闭环：提问 -> 讲解 -> 导图 -> 练习 -> 错题 -> 新路径",
+                "下一次从错题最高频知识点开始",
+            ],
+            "check_question": "你下一次打开系统时，第一步要看哪份资料？",
+        },
+    ]
+
+
 def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> dict[str, Any]:
     label = _resource_label(resource_type)
     title = f"{topic or '当前学习主题'} · {label}"
@@ -727,18 +892,13 @@ def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> 
         items = _demo_quiz(topic)
         return {**base, "items": items, "content": {"items": items}}
     if resource_type == "ppt":
+        slides = _teaching_ppt_slides(topic)
         return {
             **base,
             "format": "markdown_slide_deck",
             "download_ext": ".md",
-            "slide_count": 5,
-            "slides": [
-                {"title": "学习目标", "bullets": ["理解核心概念", "掌握基本方法", "完成配套练习"], "speaker_notes": "开场说明本课围绕一个具体知识点建立可复习的学习闭环。"},
-                {"title": "核心概念", "bullets": [f"围绕「{topic or '当前主题'}」建立知识框架", "结合课程资料解释定义、条件和适用范围"], "speaker_notes": "先讲概念本身，再强调适用条件，避免只背结论。"},
-                {"title": "例题讲解", "bullets": ["从简单问题开始", "逐步拆解解题步骤", "标出每一步使用的定义或定理"], "speaker_notes": "用板书式步骤展示解题，不跳步。"},
-                {"title": "常见误区", "bullets": ["只记结论不理解条件", "忽略左右或边界情况", "错题没有回到概念复盘"], "speaker_notes": "把学生可能犯错的地方讲在前面，降低练习挫败感。"},
-                {"title": "课后练习", "bullets": ["完成 3 道配套练习题", "记录错因并查看学习报告", "继续生成导图或讲义复盘"], "speaker_notes": "收束到下一步行动，让课件真正服务学习。"},
-            ],
+            "slide_count": len(slides),
+            "slides": slides,
         }
     if resource_type == "study_plan":
         plan = _build_demo_study_plan(topic or "函数极限")
@@ -814,7 +974,7 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
         lines = [
             f"# {title}",
             "",
-            "> 文字版模拟 PPT：每个“第 N 页”就是一页幻灯片，可直接复制到 PowerPoint / WPS，也可作为答辩讲稿使用。",
+            "> 教学版文字课件：面向“还不会”的学生设计。每页包含学生卡点、讲解目标、老师讲稿、板书步骤和课堂检查问题，可直接复制到 PowerPoint / WPS 或作为讲课稿使用。",
             "",
             "## 目录",
         ]
@@ -824,11 +984,23 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
         for idx, slide in enumerate(payload.get("slides") or [], 1):
             lines.append(f"\n## 第 {idx} 页：{slide.get('title', '课件页')}")
             lines.append("")
+            if slide.get("student_problem"):
+                lines.append(f"**学生卡点**：{slide.get('student_problem')}")
+                lines.append("")
+            lines.append("**本页要教会学生：**")
             for bullet in slide.get("bullets") or slide.get("points") or []:
                 lines.append(f"- {bullet}")
-            if slide.get("speaker_notes"):
+            if slide.get("teacher_script") or slide.get("speaker_notes"):
                 lines.append("")
-                lines.append(f"**讲解备注**：{slide.get('speaker_notes')}")
+                lines.append(f"**老师讲法**：{slide.get('teacher_script') or slide.get('speaker_notes')}")
+            if slide.get("board_work"):
+                lines.append("")
+                lines.append("**板书/演示步骤：**")
+                for step in slide.get("board_work") or []:
+                    lines.append(f"- {step}")
+            if slide.get("check_question"):
+                lines.append("")
+                lines.append(f"**课堂检查问题**：{slide.get('check_question')}")
             lines.append("\n---")
         return "\n".join(lines)
     return str(payload.get("content") or f"# {title}\n\n内容已生成。")

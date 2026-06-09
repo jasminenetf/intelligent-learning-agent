@@ -729,8 +729,19 @@ function _renderPptPanel(el, d){
   const title = d.title || 'PPT课件';
   const slideCount = d.slide_count || (Array.isArray(d.slides) ? d.slides.length : '?');
   const slides = Array.isArray(d.slides) ? d.slides.slice(0, 8) : [];
-  el.innerHTML = '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>共 ' + esc(String(slideCount)) + ' 页</span><span>文字版模拟 PPT</span><span>可复制到 PowerPoint / WPS</span></div><div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, title + '.md').replace('>下载<', '>下载文字版课件<') + '</div></div>' +
-    (slides.length ? slides.map(function(s, i){ return '<div class="course-card"><h4>📊 第 ' + (i + 1) + ' 页：' + esc(s.title || s.heading || '课件页') + '</h4><div style="white-space:pre-wrap;font-size:13px;line-height:1.7;margin-top:8px">' + esc((s.bullets || s.points || []).join('\n') || s.content || '') + (s.speaker_notes ? '\n\n讲解备注：' + esc(s.speaker_notes) : '') + '</div></div>'; }).join('') : '<div class="course-card"><h4>文字课件已生成</h4><div class="course-meta"><span>点击下载按钮获取 Markdown 版本</span></div></div>');
+  el.innerHTML = '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>共 ' + esc(String(slideCount)) + ' 页</span><span>教学版文字课件</span><span>含讲稿 / 板书 / 检查问题</span></div><div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, title + '.md').replace('>下载<', '>下载教学稿<') + '</div></div>' +
+    (slides.length ? slides.map(function(s, i){
+      const bullets = (s.bullets || s.points || []).map(function(x){ return '- ' + x; }).join('\n');
+      const board = (s.board_work || []).map(function(x){ return '- ' + x; }).join('\n');
+      const text = [
+        s.student_problem ? '学生卡点：' + s.student_problem : '',
+        bullets ? '本页要教会学生：\n' + bullets : (s.content || ''),
+        (s.teacher_script || s.speaker_notes) ? '老师讲法：' + (s.teacher_script || s.speaker_notes) : '',
+        board ? '板书/演示步骤：\n' + board : '',
+        s.check_question ? '课堂检查问题：' + s.check_question : '',
+      ].filter(Boolean).join('\n\n');
+      return '<div class="course-card"><h4>📊 第 ' + (i + 1) + ' 页：' + esc(s.title || s.heading || '课件页') + '</h4><div style="white-space:pre-wrap;font-size:13px;line-height:1.75;margin-top:8px">' + esc(text) + '</div></div>';
+    }).join('') : '<div class="course-card"><h4>教学稿已生成</h4><div class="course-meta"><span>点击下载按钮获取 Markdown 版本</span></div></div>');
 }
 
 function _renderTextResourcePanel(el, d, type){
