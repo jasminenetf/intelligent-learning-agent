@@ -132,6 +132,16 @@ a{color:var(--primary);text-decoration:none}
 
 /* Canvas */
 .mindmap-canvas-wrap{flex:1;overflow:hidden;position:relative;background:#fff;display:flex;align-items:center;justify-content:center;min-height:420px;cursor:grab}
+.mindmap-canvas-wrap.readable{align-items:flex-start;justify-content:flex-start;overflow:auto;min-height:620px;padding:22px;background:linear-gradient(180deg,#fff,var(--gray-50))}
+.mindmap-canvas-wrap.readable .mermaid{min-width:1120px}
+.mindmap-canvas-wrap.readable svg{max-width:none!important;min-width:1120px;font-size:16px}
+.mindmap-canvas-wrap.readable .node rect,
+.mindmap-canvas-wrap.readable .node polygon,
+.mindmap-canvas-wrap.readable .node circle,
+.mindmap-canvas-wrap.readable .node ellipse{stroke-width:1.4px}
+.mindmap-canvas-wrap.readable .edgePath path{stroke-width:2px}
+.mindmap-canvas-wrap.readable .label{font-size:15px}
+.mermaid-fallback{font-size:13px;line-height:1.7;white-space:pre-wrap;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px;color:var(--gray-700)}
 .mindmap-canvas-wrap:active{cursor:grabbing}
 .mindmap-canvas-wrap.dragging{cursor:grabbing}
 .mindmap-svg-container{transform-origin:center center;transition:transform .15s ease-out;display:flex;align-items:center;justify-content:center}

@@ -276,25 +276,31 @@ def _safe_node(text: str, limit: int = 28) -> str:
 def _structured_mindmap(topic: str) -> str:
     ctx = _gaoshu_context(topic)
     t = _safe_node(topic, 34)
+    step1 = _safe_node(ctx["steps"][0] if ctx["steps"] else "先明确对象与条件", 30)
+    step2 = _safe_node(ctx["steps"][1] if len(ctx["steps"]) > 1 else "再选择合适方法", 30)
+    step3 = _safe_node(ctx["steps"][2] if len(ctx["steps"]) > 2 else "最后回到定义验证", 30)
+    pit1 = _safe_node(ctx["pitfalls"][0] if ctx["pitfalls"] else "只记公式不看条件", 30)
+    pit2 = _safe_node(ctx["pitfalls"][1] if len(ctx["pitfalls"]) > 1 else "跳过关键依据", 30)
+    pit3 = _safe_node(ctx["pitfalls"][2] if len(ctx["pitfalls"]) > 2 else "错题不复盘原因", 30)
     return "\n".join([
-        "flowchart TD",
+        "flowchart TB",
         f'  A["{t}"]',
-        f'  A --> B["教材定位：{_safe_node(ctx["chapter"], 22)}"]',
-        f'  A --> C["核心定义"]',
-        f'  C --> C1["{_safe_node(ctx["summary"], 34)}"]',
-        f'  A --> D["适用条件"]',
-        f'  D --> D1["{_safe_node(ctx["steps"][0], 30)}"]',
-        f'  D --> D2["先判断对象和趋近方式"]',
-        f'  A --> E["解题流程"]',
-        f'  E --> E1["{_safe_node(ctx["steps"][0], 30)}"]',
-        f'  E --> E2["{_safe_node(ctx["steps"][1] if len(ctx["steps"]) > 1 else "写出关键变形", 30)}"]',
-        f'  E --> E3["{_safe_node(ctx["steps"][2] if len(ctx["steps"]) > 2 else "回到定义验证", 30)}"]',
-        f'  A --> F["常见误区"]',
-        *[f'  F --> F{i + 1}["{_safe_node(p, 30)}"]' for i, p in enumerate(ctx["pitfalls"][:3])],
-        f'  A --> G["练习建议"]',
-        '  G --> G1["先做定义判断题"]',
-        '  G --> G2["再做计算与证明题"]',
-        '  G --> G3["错题回到条件复盘"]',
+        f'  A --> B["1 教材定位"]',
+        f'  B --> B1["{_safe_node(ctx["chapter"], 30)}"]',
+        f'  B1 --> C["2 核心定义"]',
+        f'  C --> C1["{_safe_node(ctx["summary"], 36)}"]',
+        f'  C1 --> D["3 解题流程"]',
+        f'  D --> D1["{step1}"]',
+        f'  D1 --> D2["{step2}"]',
+        f'  D2 --> D3["{step3}"]',
+        f'  D3 --> E["4 常见误区"]',
+        f'  E --> E1["{pit1}"]',
+        f'  E --> E2["{pit2}"]',
+        f'  E --> E3["{pit3}"]',
+        f'  E3 --> F["5 巩固路径"]',
+        '  F --> F1["先做定义判断题"]',
+        '  F1 --> F2["再做计算与证明题"]',
+        '  F2 --> F3["错题回到条件复盘"]',
     ])
 
 
@@ -341,19 +347,20 @@ def _llm_generate_mindmap(topic: str) -> dict[str, Any] | None:
     pitfalls = [str(x) for x in (parsed.get("pitfalls") or ctx["pitfalls"])][:3]
     practice = [str(x) for x in (parsed.get("practice") or ["先做定义判断题", "再做计算题", "错题回到条件复盘"])][:3]
     lines = [
-        "flowchart TD",
+        "flowchart TB",
         f'  A["{_safe_node(topic, 34)}"]',
-        f'  A --> B["教材定位：{_safe_node(ctx["chapter"], 22)}"]',
-        '  A --> C["核心定义"]',
+        '  A --> B["1 教材定位"]',
+        f'  B --> B1["{_safe_node(ctx["chapter"], 30)}"]',
+        '  B1 --> C["2 核心定义"]',
         f'  C --> C1["{definition}"]',
-        '  A --> D["适用条件"]',
-        *[f'  D --> D{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(conditions)],
-        '  A --> E["解题流程"]',
-        *[f'  E --> E{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(steps)],
-        '  A --> F["常见误区"]',
-        *[f'  F --> F{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(pitfalls)],
-        '  A --> G["练习建议"]',
-        *[f'  G --> G{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(practice)],
+        '  C1 --> D["3 适用条件"]',
+        *[f'  D{i if i else ""} --> D{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(conditions)],
+        f'  D{len(conditions)} --> E["4 解题流程"]',
+        *[f'  E{i if i else ""} --> E{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(steps)],
+        f'  E{len(steps)} --> F["5 常见误区"]',
+        *[f'  F{i if i else ""} --> F{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(pitfalls)],
+        f'  F{len(pitfalls)} --> G["6 练习建议"]',
+        *[f'  G{i if i else ""} --> G{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(practice)],
     ]
     mermaid = "\n".join(lines)
     return {
@@ -823,8 +830,8 @@ def ask(body: AskRequest):
         "content_safety": {"safe": True, "risk_level": "low"},
         "resource_package": {
             "title": f"{question[:20]}高数资源包",
-            "items": [{"type": "lecture_doc", "title": "讲义"}, {"type": "mindmap", "title": "导图"}],
-            "item_count": 2,
+            "items": [{"type": "mindmap", "title": "导图"}, {"type": "quiz", "title": "练习题"}, {"type": "lecture_doc", "title": "讲义"}],
+            "item_count": 3,
             "agent_count": 3,
             "grounding_score": 0.85,
             "risk_level": "low",
@@ -834,7 +841,14 @@ def ask(body: AskRequest):
             {"type": "quiz", "title": "生成练习题"},
             {"type": "ppt", "title": "生成PPT"},
         ],
-        "generated_artifacts": {"ready_for_generation": True, "suggestions": [{"type": "lecture_doc", "title": "讲义"}]},
+        "generated_artifacts": {
+            "ready_for_generation": True,
+            "suggestions": [
+                {"type": "mindmap", "title": "思维导图"},
+                {"type": "quiz", "title": "练习题"},
+                {"type": "lecture_doc", "title": "讲义"},
+            ],
+        },
     }
     return {"ok": True, "data": payload, **payload}
 

@@ -26,6 +26,9 @@ const S = {
   currentResourcePackage: null,
   llmProvider: '',
   llmModel: '',
+  autoArtifactTopicKey: '',
+  autoArtifactRunning: false,
+  mermaidZoom: 1.35,
 };
 
 const $ = (s) => document.querySelector(s);
@@ -643,9 +646,45 @@ function _activateArtifactTab(type){
   _switchArtifactTab(tabId, btn);
 }
 
+function _applyMermaidZoom(){
+  const host = document.getElementById('mermaid-host');
+  if (!host) return;
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  const zoom = Math.max(0.8, Math.min(2.4, Number(S.mermaidZoom || 1.35)));
+  const baseWidth = Math.max(1120, Math.min(1700, Math.round((host.clientWidth || 1000) * 1.18)));
+  svg.style.width = Math.round(baseWidth * zoom) + 'px';
+  svg.style.maxWidth = 'none';
+  svg.style.height = 'auto';
+  svg.style.display = 'block';
+}
+
+function _zoomMermaid(delta){
+  S.mermaidZoom = Math.max(0.8, Math.min(2.4, Number(S.mermaidZoom || 1.35) + delta));
+  _applyMermaidZoom();
+}
+
+function _resetMermaidZoom(){
+  S.mermaidZoom = 1.35;
+  _applyMermaidZoom();
+}
+
 function _renderMermaidPanel(el, code, title){
   if (!el) return;
-  el.innerHTML = '<div class="course-card"><h4>' + esc(title || '知识结构图') + '</h4></div><div id="mermaid-host"></div>';
+  el.innerHTML =
+    '<div class="mindmap-product">' +
+      '<div class="mindmap-toolbar">' +
+        '<div class="mt-title-area"><div class="mt-title">' + esc(title || '知识结构图') + '</div><div class="mt-subtitle">已按学习顺序展开，可横向/纵向滚动查看细节</div></div>' +
+        '<div class="mt-actions">' +
+          '<span class="mindmap-status-tag generated">已生成</span>' +
+          '<button type="button" class="btn btn-sm btn-outline" onclick="_zoomMermaid(0.18)">放大</button>' +
+          '<button type="button" class="btn btn-sm btn-outline" onclick="_zoomMermaid(-0.18)">缩小</button>' +
+          '<button type="button" class="btn btn-sm btn-outline" onclick="_resetMermaidZoom()">重置</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mindmap-canvas-wrap readable" id="mermaid-host"></div>' +
+      '<div class="mindmap-info-bar"><span class="mi-item"><span class="mi-dot"></span>导图默认放大显示</span><span class="mi-item">滚动鼠标或拖动滚动条查看完整结构</span></div>' +
+    '</div>';
   const host = document.getElementById('mermaid-host');
   if (!host) return;
   const node = document.createElement('div');
@@ -653,7 +692,11 @@ function _renderMermaidPanel(el, code, title){
   node.textContent = code || 'graph TD\n  A[暂无导图]';
   host.appendChild(node);
   if (window.mermaid && mermaid.run) {
-    mermaid.run({ nodes: [node] }).catch(function(){});
+    mermaid.run({ nodes: [node] }).then(function(){
+      setTimeout(_applyMermaidZoom, 30);
+    }).catch(function(){
+      host.innerHTML = '<pre class="mermaid-fallback">' + esc(code || '暂无导图') + '</pre>';
+    });
   }
 }
 
@@ -788,6 +831,27 @@ async function loadArtifactPreview(type, topic){
     toast('资源已加载到预览区', 'success');
   } catch (e) {
     panel.innerHTML = '<div class="error-card"><div class="err-title">生成失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
+  }
+}
+
+async function autoGenerateStudyArtifacts(topic, suggestions){
+  topic = topic || _currentLearningTopic();
+  const key = String(topic || '').trim();
+  if (!key || S.autoArtifactRunning || S.autoArtifactTopicKey === key) return;
+  S.autoArtifactRunning = true;
+  S.autoArtifactTopicKey = key;
+  const wanted = ['mindmap', 'quiz', 'lecture_doc'];
+  toast('正在自动生成导图、练习题和讲义...', 'info');
+  try {
+    for (const type of wanted) {
+      try {
+        await loadArtifactPreview(type, topic);
+      } catch (_) {}
+    }
+    _activateArtifactTab('mindmap');
+    toast('配套导图、练习题和讲义已生成', 'success');
+  } finally {
+    S.autoArtifactRunning = false;
   }
 }
 
@@ -1465,8 +1529,9 @@ function _finishAskResponse(el, msg, d, box){
   }
   const artifacts = d.generated_artifacts || {};
   if (artifacts.ready_for_generation && artifacts.suggestions && artifacts.suggestions.length) {
-    const first = artifacts.suggestions[0];
-    if (first && first.type) toast('可点击推荐按钮在右侧预览 ' + (first.title || first.type), 'info');
+    setTimeout(function(){
+      autoGenerateStudyArtifacts(msg || topicFromPackage || S.lastTopic, artifacts.suggestions);
+    }, 120);
   }
   if (box) box.scrollTop = box.scrollHeight;
 }
@@ -1934,6 +1999,8 @@ window.onSessionSelect = onSessionSelect;
 window.loadAssistant = loadAssistant;
 window.quickGenerateFromChat = quickGenerateFromChat;
 window.loadArtifactPreview = loadArtifactPreview;
+window._zoomMermaid = _zoomMermaid;
+window._resetMermaidZoom = _resetMermaidZoom;
 window.downloadAuthFile = downloadAuthFile;
 window.submitQuizAnswer = submitQuizAnswer;
 window.joinReviewPlan = joinReviewPlan;
