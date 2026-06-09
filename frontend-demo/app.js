@@ -143,7 +143,7 @@ function _answerToIndex(answer, options){
   const raw = String(answer ?? '').trim();
   if (!raw) return 0;
   const letter = raw.match(/^[A-Da-d]/);
-  if (letter) return Math.min(letter[0].toUpperCase().charCodeAt(0) - 65, Math.max(options.length - 1, 0));
+  if (letter) return Math.max(0, Math.min(letter[0].toUpperCase().charCodeAt(0) - 65, Math.max(options.length - 1, 0)));
   const num = raw.match(/\d+/);
   if (num) {
     const n = Number(num[0]);
@@ -674,7 +674,7 @@ function _renderPptPanel(el, d){
 
 function _renderTextResourcePanel(el, d, type){
   if (!el) return;
-  const content = d.content || '内容生成完成';
+  const content = typeof d.content === 'object' ? JSON.stringify(d.content, null, 2) : (d.content || '内容生成完成');
   const title = d.title || (type === 'reading' ? '拓展阅读' : (type === 'video_script' ? '视频脚本' : '学习讲义'));
   if (type === 'video_script') {
     const scenes = content.split(/\n\s*\n|(?=镜头\s*\d+)|(?=场景\s*\d+)|(?=分镜\s*\d+)|(?=Scene\s*\d+)/i).map(s => s.trim()).filter(Boolean).slice(0, 8);
@@ -894,7 +894,7 @@ function renderResourceJobResults(resources){
   el.innerHTML = resources.map(r => {
     const type = _resourceTypeOf(r);
     const title = r.title || resourceLabel(type);
-    const fname = title + '.txt';
+    const fname = title + (['lecture_doc', 'mindmap', 'quiz', 'reading'].includes(type) ? '.md' : '.txt');
     return '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>' + esc(resourceLabel(type)) + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
       _resourceDownloadBtn(r.resource_id, r.download_url, fname) +
       '<button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">去资源中心</button></div></div>';

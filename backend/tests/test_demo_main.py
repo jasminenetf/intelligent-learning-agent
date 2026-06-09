@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
 
-from app.demo_main import app
+from app.demo_main import STATE, app
 
 
 client = TestClient(app)
+STATE["llm_provider"] = "mock"
 
 
 def test_demo_backend_open_bootstrap_and_settings_status():
@@ -32,8 +33,8 @@ def test_generate_mindmap_returns_chinese_mermaid_for_topic():
     assert data["ok"] is True
     assert data["type"] == "mindmap"
     assert "过拟合与正则化" in data["title"]
-    assert data["mermaid"].startswith("mindmap")
-    assert "核心概念" in data["mermaid"]
+    assert data["mermaid"].startswith(("mindmap", "flowchart"))
+    assert "核心定义" in data["mermaid"]
 
 
 def test_generate_quiz_returns_valid_items_for_topic():

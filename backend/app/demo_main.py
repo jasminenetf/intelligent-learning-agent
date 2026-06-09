@@ -10,6 +10,7 @@ This entrypoint intentionally avoids heavy database/ORM imports so a new user ca
 from __future__ import annotations
 
 import os
+import json
 import time
 import uuid
 from pathlib import Path
@@ -64,6 +65,7 @@ STATE: dict[str, Any] = {
     "sessions": [],
     "resources": [],
     "resource_jobs": {},
+    "resource_payloads": {},
     "extra_courses": [],
     "files": [
         {
@@ -215,13 +217,14 @@ def _mock_answer(question: str) -> str:
     )
 
 
-def _call_llm(provider: str, question: str, model_override: str = "") -> tuple[str, str, str]:
+def _call_llm(provider: str, question: str, model_override: str = "", max_tokens: int = 600, timeout_seconds: int | None = None) -> tuple[str, str, str]:
     provider, api_key, base_url, model = _provider_config(provider)
     model = model_override or model
     if provider == "mock" or not api_key:
         return "mock", model, _mock_answer(question)
     try:
-        client = OpenAI(base_url=base_url, api_key=api_key, timeout=STATE["llm_timeout_seconds"], max_retries=1)
+        timeout = min(int(STATE["llm_timeout_seconds"] or 60), int(timeout_seconds or STATE["llm_timeout_seconds"] or 60))
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
         resp = client.chat.completions.create(
             model=model,
             messages=[
@@ -231,11 +234,212 @@ def _call_llm(provider: str, question: str, model_override: str = "") -> tuple[s
                 },
                 {"role": "user", "content": question},
             ],
-            max_tokens=600,
+            max_tokens=max_tokens,
         )
         return provider, model, resp.choices[0].message.content or "已连接模型，但没有返回内容。"
     except Exception as exc:
         return "mock", "mock", _mock_answer(question) + f"\n\n真实模型调用失败：{str(exc)[:160]}"
+
+
+def _strip_code_fence(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rsplit("```", 1)[0]
+    return cleaned.strip()
+
+
+def _parse_json_object(text: str) -> Any:
+    cleaned = _strip_code_fence(text)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        pass
+    starts = [idx for idx in [cleaned.find("{"), cleaned.find("[")] if idx >= 0]
+    if not starts:
+        return None
+    start = min(starts)
+    end = max(cleaned.rfind("}"), cleaned.rfind("]"))
+    if end <= start:
+        return None
+    try:
+        return json.loads(cleaned[start : end + 1])
+    except Exception:
+        return None
+
+
+def _safe_node(text: str, limit: int = 28) -> str:
+    return str(text or "").replace('"', "'").replace("[", " ").replace("]", " ").replace("\n", " ").strip()[:limit] or "知识点"
+
+
+def _structured_mindmap(topic: str) -> str:
+    ctx = _gaoshu_context(topic)
+    t = _safe_node(topic, 34)
+    return "\n".join([
+        "flowchart TD",
+        f'  A["{t}"]',
+        f'  A --> B["教材定位：{_safe_node(ctx["chapter"], 22)}"]',
+        f'  A --> C["核心定义"]',
+        f'  C --> C1["{_safe_node(ctx["summary"], 34)}"]',
+        f'  A --> D["适用条件"]',
+        f'  D --> D1["{_safe_node(ctx["steps"][0], 30)}"]',
+        f'  D --> D2["先判断对象和趋近方式"]',
+        f'  A --> E["解题流程"]',
+        f'  E --> E1["{_safe_node(ctx["steps"][0], 30)}"]',
+        f'  E --> E2["{_safe_node(ctx["steps"][1] if len(ctx["steps"]) > 1 else "写出关键变形", 30)}"]',
+        f'  E --> E3["{_safe_node(ctx["steps"][2] if len(ctx["steps"]) > 2 else "回到定义验证", 30)}"]',
+        f'  A --> F["常见误区"]',
+        *[f'  F --> F{i + 1}["{_safe_node(p, 30)}"]' for i, p in enumerate(ctx["pitfalls"][:3])],
+        f'  A --> G["练习建议"]',
+        '  G --> G1["先做定义判断题"]',
+        '  G --> G2["再做计算与证明题"]',
+        '  G --> G3["错题回到条件复盘"]',
+    ])
+
+
+def _structured_lecture(topic: str) -> str:
+    ctx = _gaoshu_context(topic)
+    return "\n\n".join([
+        f"# {topic} · 学习讲义",
+        f"## 1. 教材定位\n《高等数学上册》：{ctx['chapter']}。本节用于建立后续导数、连续性、积分等内容的基础。",
+        f"## 2. 核心定义\n{ctx['summary']}",
+        "## 3. 直观理解\n先看自变量如何趋近，再看函数值是否稳定靠近某个确定值。重点不是某一点的函数值本身，而是趋近过程中的变化趋势。",
+        "## 4. 适用条件\n" + "\n".join(f"- {step}" for step in ctx["steps"]),
+        "## 5. 典型例题步骤\n例：判断或计算一个函数在某点的极限。\n1. 明确趋近点与趋近方向。\n2. 代入检查是否出现未定式或定义空缺。\n3. 选择化简、等价无穷小、左右极限或定义验证。\n4. 写出结论，并说明适用条件。",
+        "## 6. 常见误区\n" + "\n".join(f"- {pitfall}" for pitfall in ctx["pitfalls"]),
+        "## 7. 自测清单\n- 我能说清楚定义中的每个条件吗？\n- 我能区分函数值和极限值吗？\n- 我能判断什么时候需要看左右极限吗？\n- 我能把错题归因到定义、条件或计算步骤吗？",
+    ])
+
+
+def _resolve_generation_topic(topic: str, knowledge_point: str = "") -> str:
+    candidate = (topic or knowledge_point or "").strip()
+    generic = {"", "当前学习主题", "当前主题", "学习主题", "高等数学", "高等数学上册"}
+    if candidate in generic and STATE["sessions"]:
+        candidate = str(STATE["sessions"][-1].get("title") or "").strip()
+    return candidate or "函数极限的定义"
+
+
+def _llm_generate_mindmap(topic: str) -> dict[str, Any] | None:
+    prompt = (
+        "请基于《高等数学上册》为学生主题提炼辅助学习结构。"
+        "只输出 JSON，不要 Markdown。格式："
+        "{\"definition\":\"一句核心定义\",\"conditions\":[\"条件1\",\"条件2\"],"
+        "\"steps\":[\"步骤1\",\"步骤2\",\"步骤3\"],\"pitfalls\":[\"误区1\",\"误区2\"],"
+        "\"practice\":[\"练习建议1\",\"练习建议2\"]}。"
+        "所有内容必须直接围绕主题，不许写“当前学习主题”。"
+        f"\n主题：{topic}"
+    )
+    provider, model, answer = _call_llm("", prompt, max_tokens=700, timeout_seconds=35)
+    parsed = _parse_json_object(answer)
+    if provider == "mock" or not isinstance(parsed, dict):
+        return None
+    ctx = _gaoshu_context(topic)
+    definition = _safe_node(parsed.get("definition") or ctx["summary"], 34)
+    conditions = [str(x) for x in (parsed.get("conditions") or ctx["steps"])][:3]
+    steps = [str(x) for x in (parsed.get("steps") or ctx["steps"])][:3]
+    pitfalls = [str(x) for x in (parsed.get("pitfalls") or ctx["pitfalls"])][:3]
+    practice = [str(x) for x in (parsed.get("practice") or ["先做定义判断题", "再做计算题", "错题回到条件复盘"])][:3]
+    lines = [
+        "flowchart TD",
+        f'  A["{_safe_node(topic, 34)}"]',
+        f'  A --> B["教材定位：{_safe_node(ctx["chapter"], 22)}"]',
+        '  A --> C["核心定义"]',
+        f'  C --> C1["{definition}"]',
+        '  A --> D["适用条件"]',
+        *[f'  D --> D{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(conditions)],
+        '  A --> E["解题流程"]',
+        *[f'  E --> E{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(steps)],
+        '  A --> F["常见误区"]',
+        *[f'  F --> F{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(pitfalls)],
+        '  A --> G["练习建议"]',
+        *[f'  G --> G{i + 1}["{_safe_node(x, 30)}"]' for i, x in enumerate(practice)],
+    ]
+    mermaid = "\n".join(lines)
+    return {
+        "mermaid": mermaid,
+        "content": mermaid,
+        "generated_by": provider,
+        "model": model,
+        "fallback_used": False,
+    }
+
+
+def _llm_generate_lecture(topic: str) -> dict[str, Any] | None:
+    prompt = (
+        "请基于《高等数学上册》为学生刚提问的主题生成一份可直接复习的中文学习讲义。"
+        "不要泛泛而谈，不要写“当前学习主题”。必须围绕主题本身。"
+        "请用 Markdown，结构必须包含：\n"
+        "1. 教材定位\n2. 核心定义\n3. 直观理解\n4. 适用条件\n"
+        "5. 典型例题步骤（给一个简短例题并逐步解）\n6. 常见误区\n7. 自测清单。"
+        "数学表达尽量清楚，答案适合高中/大学高数初学者复习。"
+        f"\n主题：{topic}"
+    )
+    provider, model, answer = _call_llm("", prompt, max_tokens=950, timeout_seconds=35)
+    content = _strip_code_fence(answer)
+    if provider == "mock" or len(content) < 120:
+        return None
+    return {
+        "content": content,
+        "generated_by": provider,
+        "model": model,
+        "fallback_used": False,
+    }
+
+
+def _llm_generate_quiz(topic: str) -> dict[str, Any] | None:
+    prompt = (
+        "为《高等数学上册》生成3道单选题，只考察给定主题。"
+        "只输出JSON：{\"items\":[{\"question\":\"题干\",\"options\":[\"A\",\"B\",\"C\",\"D\"],"
+        "\"answer\":0,\"knowledge_point\":\"知识点\",\"explanation\":\"解析\"}]}。"
+        "answer用0-3数字。不要学习方法题。"
+        f"\n主题：{topic}"
+    )
+    provider, model, answer = _call_llm("", prompt, max_tokens=1100, timeout_seconds=50)
+    parsed = _parse_json_object(answer)
+    if provider == "mock" or not parsed:
+        return None
+    items = parsed.get("items") if isinstance(parsed, dict) else parsed
+    if not isinstance(items, list):
+        return None
+    cleaned: list[dict[str, Any]] = []
+    for item in items[:5]:
+        if not isinstance(item, dict):
+            continue
+        options = item.get("options") or item.get("choices") or []
+        if not isinstance(options, list):
+            continue
+        options = [str(opt).strip() for opt in options if str(opt).strip()]
+        if len(options) < 2:
+            continue
+        try:
+            answer_idx = int(item.get("answer", item.get("correct_answer", 0)))
+        except Exception:
+            raw_answer = str(item.get("answer", item.get("correct_answer", "0"))).strip().upper()
+            answer_idx = ord(raw_answer[0]) - 65 if raw_answer and raw_answer[0] in "ABCD" else 0
+        if not 0 <= answer_idx < len(options):
+            answer_idx = 0
+        question = str(item.get("question") or item.get("title") or "").strip()
+        if not question:
+            continue
+        cleaned.append(
+            {
+                "question": question,
+                "options": options[:4],
+                "answer": min(answer_idx, len(options[:4]) - 1),
+                "knowledge_point": str(item.get("knowledge_point") or topic).strip(),
+                "explanation": str(item.get("explanation") or item.get("analysis") or "").strip(),
+            }
+        )
+    if len(cleaned) < 2:
+        return None
+    return {
+        "items": cleaned[:3],
+        "content": {"items": cleaned[:3]},
+        "generated_by": provider,
+        "model": model,
+        "fallback_used": False,
+    }
 
 
 class LLMConfigRequest(BaseModel):
@@ -282,28 +486,7 @@ def _resource_label(resource_type: str) -> str:
 
 
 def _demo_mindmap(topic: str) -> str:
-    safe_topic = (topic or "当前学习主题").replace('"', "'")
-    ctx = _gaoshu_context(safe_topic)
-    chapter = str(ctx["chapter"]).replace('"', "'")
-    steps = [str(s).replace('"', "'") for s in ctx["steps"]]
-    pitfalls = [str(s).replace('"', "'") for s in ctx["pitfalls"]]
-    return "\n".join([
-        "mindmap",
-        f"  root(({safe_topic}))",
-        "    教材定位",
-        f"      {chapter}",
-        "      高数上.pdf",
-        "    核心概念",
-        f"      {ctx['summary'][:34]}",
-        "    解题步骤",
-        *[f"      {step[:34]}" for step in steps],
-        "    常见误区",
-        *[f"      {pitfall[:34]}" for pitfall in pitfalls],
-        "    巩固方式",
-        "      例题复盘",
-        "      配套练习",
-        "      错题归因",
-    ])
+    return _structured_mindmap(topic or "函数极限的定义")
 
 
 def _demo_quiz(topic: str) -> list[dict[str, Any]]:
@@ -312,25 +495,25 @@ def _demo_quiz(topic: str) -> list[dict[str, Any]]:
     keyword = ctx["keyword"]
     return [
         {
-            "question": f"学习「{title}」时，第一步最应该做什么？",
-            "options": ["先定位定义和适用条件", "直接套公式不看题型", "跳过教材例题", "只记最终答案"],
+            "question": f"关于「{title}」，下列哪项表述最符合教材中的核心含义？",
+            "options": [ctx["summary"], "只要函数在该点有定义，极限就一定存在", "极限只看最终答案，不需要讨论趋近过程", "极限、导数、积分三者没有联系"],
             "answer": 0,
             "knowledge_point": keyword,
-            "explanation": f"《高数上》学习要先回到{ctx['chapter']}中的定义、定理条件和例题结构。",
+            "explanation": f"该题考察{ctx['chapter']}中的核心定义与适用条件。",
         },
         {
-            "question": f"关于「{keyword}」的巩固，下列哪种做法更可靠？",
-            "options": ["结合例题拆步骤并做变式练习", "只背一个结论", "完全不检查条件", "只看答案不演算"],
+            "question": f"解决「{keyword}」相关题目时，哪一步最关键？",
+            "options": [ctx["steps"][0], "忽略题目条件直接代数值", "只比较答案形式", "不需要判断适用场景"],
             "answer": 0,
             "knowledge_point": keyword,
-            "explanation": "高数题目容易在条件、变形和步骤上出错，例题拆解加变式练习更稳。",
+            "explanation": "高数题目的关键通常在于先判断对象、条件和方法是否匹配。",
         },
         {
-            "question": f"下列哪项属于「{keyword}」学习中的常见风险？",
-            "options": [ctx["pitfalls"][0], "先说明依据", "写出关键步骤", "复盘错题原因"],
+            "question": f"下列哪项是理解「{keyword}」时最容易出现的错误？",
+            "options": [ctx["pitfalls"][0], "说明定义来源", "检查左右或条件", "写出关键变形步骤"],
             "answer": 0,
             "knowledge_point": keyword,
-            "explanation": "测验会把常见误区写入错题反馈，方便后续生成复习路径。",
+            "explanation": "该选项属于教材复习时需要特别避免的典型误区。",
         },
     ]
 
@@ -381,12 +564,74 @@ def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> 
         }
     return {
         **base,
-        "content": (
-            f"# {title}\n\n"
-            f"## 核心说明\n围绕「{topic or '当前学习主题'}」整理学习材料。\n\n"
-            "## 学习建议\n先理解概念，再结合例题练习，最后回到错题本复盘。"
-        ),
+        "content": _structured_lecture(topic or "函数极限的定义"),
     }
+
+
+def _generate_resource_payload(resource_type: str, topic: str, resource_id: str) -> dict[str, Any]:
+    topic = _resolve_generation_topic(topic)
+    payload = _demo_resource_payload(resource_type, topic, resource_id)
+    llm_payload: dict[str, Any] | None = None
+    use_artifact_llm = os.getenv("RESOURCE_LLM_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
+    if resource_type == "quiz":
+        llm_payload = _llm_generate_quiz(topic)
+    elif use_artifact_llm and resource_type == "mindmap":
+        llm_payload = _llm_generate_mindmap(topic)
+    elif use_artifact_llm and resource_type in {"lecture_doc", "reading", "video_script"}:
+        llm_payload = _llm_generate_lecture(topic)
+    if llm_payload:
+        payload.update(llm_payload)
+        payload["title"] = f"{topic} · {payload['label']}"
+    return payload
+
+
+def _store_resource_item(resource_id: str, payload: dict[str, Any], resource_type: str, quality_score: float | None = None) -> dict[str, Any]:
+    payload["download_url"] = f"/api/resources/download/{resource_id}"
+    STATE["resource_payloads"][resource_id] = payload
+    item = {
+        "id": resource_id,
+        "resource_id": resource_id,
+        "title": payload["title"],
+        "type": resource_type,
+        "resource_type": resource_type,
+        "label": payload["label"],
+        "status": "completed",
+        "generated_by": payload.get("generated_by", "demo_template"),
+        "fallback_used": bool(payload.get("fallback_used", False)),
+        "size": len(str(payload.get("content") or payload.get("mermaid") or payload.get("items") or payload)) * 2,
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "download_url": f"/api/resources/download/{resource_id}",
+    }
+    if quality_score is not None:
+        item["quality_score"] = quality_score
+    return item
+
+
+def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> str:
+    title = str(payload.get("title") or item.get("title") or "学习资源")
+    resource_type = str(payload.get("resource_type") or payload.get("type") or item.get("type") or "lecture_doc")
+    if resource_type == "mindmap":
+        return "\n\n".join([f"# {title}", "## Mermaid 思维导图", str(payload.get("mermaid") or payload.get("content") or "")])
+    if resource_type == "quiz":
+        lines = [f"# {title}", "## 练习题"]
+        for idx, q in enumerate(payload.get("items") or [], 1):
+            lines.append(f"\n### Q{idx}. {q.get('question', '')}")
+            for oi, opt in enumerate(q.get("options") or []):
+                marker = chr(65 + oi)
+                lines.append(f"{marker}. {opt}")
+            answer = int(q.get("answer", 0) or 0)
+            lines.append(f"答案：{chr(65 + answer)}")
+            if q.get("explanation"):
+                lines.append(f"解析：{q.get('explanation')}")
+        return "\n".join(lines)
+    if resource_type == "ppt":
+        lines = [f"# {title}", "## PPT 大纲"]
+        for idx, slide in enumerate(payload.get("slides") or [], 1):
+            lines.append(f"\n### 第 {idx} 页：{slide.get('title', '课件页')}")
+            for bullet in slide.get("bullets") or slide.get("points") or []:
+                lines.append(f"- {bullet}")
+        return "\n".join(lines)
+    return str(payload.get("content") or f"# {title}\n\n内容已生成。")
 
 
 @app.get("/api/health")
@@ -630,25 +875,16 @@ def ask_stream(body: AskRequest):
 @app.post("/api/app/generate")
 def app_generate(body: GenerateRequest):
     rid = str(uuid.uuid4())
-    topic = body.topic or body.knowledge_point or "当前学习主题"
-    payload = _demo_resource_payload(body.resource_type, topic, rid)
-    item = {
-        "id": rid,
-        "resource_id": rid,
-        "title": payload["title"],
-        "type": body.resource_type,
-        "label": payload["label"],
-        "status": "completed",
-        "size": len(str(payload.get("content") or payload.get("mermaid") or payload.get("items") or payload)) * 2,
-        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
+    topic = _resolve_generation_topic(body.topic, body.knowledge_point)
+    payload = _generate_resource_payload(body.resource_type, topic, rid)
+    item = _store_resource_item(rid, payload, body.resource_type)
     STATE["resources"].append(item)
     return {"ok": True, "resource": item, "data": payload, **payload}
 
 
 @app.post("/api/resources/generate")
 def resources_generate(body: dict[str, Any]):
-    topic = body.get("topic") or body.get("knowledge_point") or "当前学习主题"
+    topic = _resolve_generation_topic(body.get("topic") or "", body.get("knowledge_point") or "")
     requested = body.get("resource_types") or body.get("types") or [body.get("resource_type") or "lecture_doc"]
     if isinstance(requested, str):
         requested = [requested]
@@ -659,20 +895,8 @@ def resources_generate(body: dict[str, Any]):
     resources: list[dict[str, Any]] = []
     for resource_type in resource_types:
         rid = str(uuid.uuid4())
-        payload = _demo_resource_payload(resource_type, topic, rid)
-        item = {
-            "id": rid,
-            "resource_id": rid,
-            "title": payload["title"],
-            "type": resource_type,
-            "resource_type": resource_type,
-            "label": payload["label"],
-            "status": "completed",
-            "quality_score": 0.92,
-            "size": len(str(payload.get("content") or payload.get("mermaid") or payload.get("items") or payload)) * 2,
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "download_url": f"/api/resources/download/{rid}",
-        }
+        payload = _generate_resource_payload(resource_type, topic, rid)
+        item = _store_resource_item(rid, payload, resource_type, quality_score=0.92 if not payload.get("fallback_used") else 0.78)
         resources.append(item)
         STATE["resources"].append(item)
 
@@ -706,20 +930,14 @@ def download_resource(resource_id: str):
     item = next((r for r in STATE["resources"] if str(r.get("resource_id") or r.get("id")) == resource_id), None)
     if not item:
         raise HTTPException(status_code=404, detail="resource not found")
+    payload = STATE["resource_payloads"].get(resource_id) or item
     title = item.get("title") or "学习资源"
-    label = item.get("label") or _resource_label(item.get("type") or item.get("resource_type") or "lecture_doc")
-    content = "\n".join([
-        str(title),
-        f"类型: {label}",
-        "状态: 已生成",
-        "",
-        "这是免登录演示模式生成的学习资源下载文件。",
-        "真实 API Key 配置后，可继续使用同一入口生成更完整内容。",
-    ])
-    filename = quote(f"{title}.txt")
+    content = _resource_download_text(payload, item)
+    ext = ".md" if (item.get("type") or item.get("resource_type")) in {"lecture_doc", "reading", "mindmap", "quiz"} else ".txt"
+    filename = quote(f"{title}{ext}")
     return Response(
         content=content.encode("utf-8"),
-        media_type="text/plain; charset=utf-8",
+        media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
 
