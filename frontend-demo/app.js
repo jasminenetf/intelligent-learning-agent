@@ -31,6 +31,7 @@ const S = {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function jsAttrArg(s){ return JSON.stringify(String(s ?? '')).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function _parseJsonList(raw){
   if (!raw) return [];
@@ -1167,25 +1168,56 @@ async function loadWrongBook(){
     masteryItems.forEach(function(m){ masteryMap[m.knowledge_point] = m; });
     const body = items.length ? items.map(it => {
       const kp = it.knowledge_point || it.topic || '未命名知识点';
+      const questionText = it.question_text || it.question || '';
+      const kpArg = jsAttrArg(kp);
+      const questionArg = jsAttrArg(questionText);
       const mastery = masteryMap[kp] || {};
       const masteryScore = mastery.mastery_score !== undefined ? Math.round(Number(mastery.mastery_score || 0) * 100) : null;
       const actions = (it.review_actions || []).map(a =>
-        '<button class="btn btn-sm btn-outline" onclick="joinReviewPlan(' + JSON.stringify(kp) + ', ' + JSON.stringify((a.resource_types || [])[0] || 'lecture_doc') + ')">' + esc(a.title || '复习') + '</button>'
+        '<button class="btn btn-sm btn-outline" onclick="joinReviewPlan(' + kpArg + ', ' + jsAttrArg((a.resource_types || [])[0] || 'lecture_doc') + ')">' + esc(a.title || '复习') + '</button>'
       ).join('');
-      return '<div class="course-card"><h4>🧯 ' + esc(kp) + '</h4><div class="course-meta"><span>' + esc(it.question_text || '') + '</span></div>' +
+      return '<div class="course-card"><h4>🧯 ' + esc(kp) + '</h4><div class="course-meta"><span>' + esc(questionText) + '</span></div>' +
         (masteryScore !== null ? '<div style="height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden;margin-top:8px"><div style="height:100%;width:' + masteryScore + '%;background:linear-gradient(90deg,var(--warning),var(--primary))"></div></div><div class="course-meta" style="margin-top:6px"><span>当前掌握度 ' + masteryScore + '%</span><span>' + esc(mastery.recommended_action || '建议复盘并完成巩固练习') + '</span></div>' : '<div class="course-meta"><span>掌握度待测</span><span>完成一次练习后自动更新</span></div>') +
         (it.explanation ? '<div class="course-meta"><span>解析：' + esc(it.explanation) + '</span></div>' : '') +
-        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="navTo(\'assistant\')">去追问</button>' +
-        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'lecture_doc\', ' + JSON.stringify(kp) + ')">复习讲义</button>' +
-        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'quiz\', ' + JSON.stringify(kp) + ')">巩固练习</button>' +
-        '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'mindmap\', ' + JSON.stringify(kp) + ')">知识结构图</button>' +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="askWrongBookTopic(' + kpArg + ', ' + questionArg + ')">去追问</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="generateWrongBookResource(&quot;lecture_doc&quot;, ' + kpArg + ')">复习讲义</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="generateWrongBookResource(&quot;quiz&quot;, ' + kpArg + ')">巩固练习</button>' +
+        '<button class="btn btn-sm btn-outline" onclick="generateWrongBookResource(&quot;mindmap&quot;, ' + kpArg + ')">知识结构图</button>' +
         actions +
-        '<button class="btn btn-sm btn-primary" onclick="joinReviewPlan(' + JSON.stringify(kp) + ')">生成复习路径</button></div></div>';
+        '<button class="btn btn-sm btn-primary" onclick="generateWrongBookReviewPath(' + kpArg + ')">生成复习路径</button></div></div>';
     }).join('') : '<div class="empty-state"><div class="empty-icon">🧯</div><p>暂无错题</p><p style="font-size:11px;color:var(--gray-400)">做完测验后，错题会自动出现在这里</p><div style="margin-top:10px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">去提问</button><button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(\'quiz\', \'当前主题\')">去做练习</button></div></div>';
     el.innerHTML = '<div class="card"><div class="card-header"><h3>错题本</h3><button class="btn btn-sm btn-outline" onclick="loadWrongBook()">🔄 刷新</button></div>' + body + '</div>';
   } catch (e) {
     el.innerHTML = '<div class="error-card"><div class="err-title">错题本加载失败</div><div class="err-detail">' + esc(e.message || '未知错误') + '</div></div>';
   }
+}
+
+function askWrongBookTopic(topic, questionText){
+  const kp = (topic || '错题复盘').trim();
+  S.lastTopic = kp;
+  S.lastQuestion = questionText || kp;
+  navTo('assistant');
+  setTimeout(function(){
+    const input = document.getElementById('chat-input');
+    if (input) {
+      input.value = '请针对我的错题知识点「' + kp + '」讲清楚定义、常见误区，并给一个例题。';
+      input.focus();
+    }
+    toast('已带入错题追问，可直接发送', 'success');
+  }, 120);
+}
+
+async function generateWrongBookResource(type, topic){
+  const kp = (topic || '错题复盘').trim();
+  S.lastTopic = kp;
+  toast('正在生成：' + resourceLabel(type), 'info');
+  await loadArtifactPreview(type, kp);
+}
+
+async function generateWrongBookReviewPath(topic){
+  const kp = (topic || '错题复盘').trim();
+  toast('正在生成复习路径...', 'info');
+  await joinReviewPlan(kp, 'study_plan');
 }
 
 function _learningReportInsights(report, wrongItems, bookmarks, audits, masteryItems, accuracy, rate){
@@ -1282,7 +1314,8 @@ async function joinReviewPlan(topic, resourceType){
     });
     if (r.ok && r.data) {
       const planPayload = unwrapApi(r);
-      S.pendingStudyPlan = planPayload.study_plan || r.data.study_plan || null;
+      const rawPlan = planPayload.study_plan || r.data.study_plan || planPayload.plan || r.data.plan || null;
+      S.pendingStudyPlan = Array.isArray(rawPlan) ? { title: kp + ' · 复习路径', steps: rawPlan } : rawPlan;
       S.pendingStudyTopic = kp;
       toast('复习路径已生成', 'success');
       if (resourceType && resourceType !== 'study_plan') {
@@ -1867,6 +1900,12 @@ window.loadDashboard = loadDashboard;
 window.loadResourceCenter = loadResourceCenter;
 window.loadLearningReportPage = loadLearningReportPage;
 window.loadWrongBook = loadWrongBook;
+window.askWrongBookTopic = askWrongBookTopic;
+window.generateWrongBookResource = generateWrongBookResource;
+window.generateWrongBookReviewPath = generateWrongBookReviewPath;
+globalThis.askWrongBookTopic = askWrongBookTopic;
+globalThis.generateWrongBookResource = generateWrongBookResource;
+globalThis.generateWrongBookReviewPath = generateWrongBookReviewPath;
 window.loadSettings = loadSettings;
 window.loadProfileCenter = loadProfileCenter;
 window.restoreProfileVersion = restoreProfileVersion;

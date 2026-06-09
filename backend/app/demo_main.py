@@ -992,7 +992,15 @@ def add_audit(payload: dict[str, Any]):
 
 @app.post("/api/analytics/review-plan")
 def review_plan(payload: dict[str, Any]):
-    return {"ok": True, "plan": [{"title": "复习极限定义与左右极限", "minutes": 20}, {"title": "完成导数和积分针对练习", "minutes": 30}]}
+    topic = payload.get("topic") or (payload.get("knowledge_points") or ["函数极限"])[0]
+    steps = [
+        {"title": f"重建「{topic}」核心定义", "description": "先用教材语言写出定义，再用自己的话解释每个条件。", "minutes": 15},
+        {"title": "定位常见误区", "description": "回看错题原因，区分函数值、极限值、左右极限和适用条件。", "minutes": 15},
+        {"title": "完成巩固练习", "description": "做 3 道同主题单选题或计算题，提交后更新掌握度。", "minutes": 25},
+        {"title": "生成结构化复盘材料", "description": "查看讲义和知识结构图，把薄弱点加入下一轮复习。", "minutes": 10},
+    ]
+    study_plan = {"title": f"{topic} · 错题复习路径", "steps": steps}
+    return {"ok": True, "study_plan": study_plan, "plan": steps, "data": {"study_plan": study_plan, "plan": steps}}
 
 
 @app.get("/api/app/learning-report")
