@@ -16,6 +16,8 @@ const S = {
   currentQuiz: null,
   generatorPrefill: null,
   lastAnswer: '',
+  lastQuestion: '',
+  lastTopic: '',
   speechUtterance: null,
   useStreamAsk: true,
   resourceCenterQuery: '',
@@ -74,6 +76,112 @@ const RESOURCE_LABELS = {
 
 function resourceLabel(type){
   return RESOURCE_LABELS[type] || type || '学习资源';
+}
+
+function _currentLearningTopic(fallback){
+  const input = document.getElementById('chat-input');
+  const typed = input ? input.value.trim() : '';
+  return typed || S.lastTopic || S.lastQuestion || fallback || '当前学习主题';
+}
+
+function _stripJsonFence(raw){
+  return String(raw || '').trim()
+    .replace(/^```(?:json|mermaid|markdown)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function _parseMaybeJson(raw){
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  const text = _stripJsonFence(raw);
+  try { return JSON.parse(text); } catch (_) {}
+  const start = Math.min.apply(null, ['{', '['].map(ch => {
+    const i = text.indexOf(ch);
+    return i < 0 ? Number.POSITIVE_INFINITY : i;
+  }));
+  if (!Number.isFinite(start)) return null;
+  const endObj = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'));
+  if (endObj <= start) return null;
+  try { return JSON.parse(text.slice(start, endObj + 1)); } catch (_) { return null; }
+}
+
+function _mindmapJsonToMermaid(data, topic){
+  const rootTitle = (data && (data.title || data.label || data.name)) || topic || '学习主题';
+  const roots = Array.isArray(data && data.nodes) ? data.nodes : (Array.isArray(data && data.children) ? data.children : []);
+  const lines = ['mindmap', '  root((' + String(rootTitle).replace(/[()]/g, '') + '))'];
+  function walk(node, depth){
+    if (!node || depth > 5) return;
+    const label = String(node.label || node.title || node.name || node.text || '').trim();
+    if (label) lines.push('  '.repeat(depth + 1) + label.replace(/[:：\n\r\t]/g, ' ').slice(0, 36));
+    const children = Array.isArray(node.children) ? node.children : (Array.isArray(node.nodes) ? node.nodes : []);
+    children.slice(0, 8).forEach(child => walk(child, depth + 1));
+  }
+  roots.slice(0, 8).forEach(node => walk(node, 1));
+  if (lines.length <= 2) {
+    lines.push('    核心概念', '    关键方法', '    常见误区', '    练习与复盘');
+  }
+  return lines.join('\n');
+}
+
+function _normalizeMermaid(raw, topic){
+  if (!raw) return _mindmapJsonToMermaid({ title: topic }, topic);
+  if (typeof raw === 'object') return _mindmapJsonToMermaid(raw, topic);
+  const text = _stripJsonFence(raw);
+  if (/^(mindmap|graph\s|flowchart\s|sequenceDiagram|classDiagram)/i.test(text)) return text;
+  const parsed = _parseMaybeJson(text);
+  if (parsed) return _mindmapJsonToMermaid(parsed, topic);
+  const lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean).slice(0, 10);
+  return ['mindmap', '  root((' + (topic || '学习主题') + '))'].concat(lines.map(s => '    ' + s.replace(/^[-*#\d.\s]+/, '').slice(0, 36))).join('\n');
+}
+
+function _answerToIndex(answer, options){
+  if (typeof answer === 'number' && Number.isFinite(answer)) {
+    if (answer >= 0 && answer < options.length) return answer;
+    if (answer >= 1 && answer <= options.length) return answer - 1;
+  }
+  const raw = String(answer ?? '').trim();
+  if (!raw) return 0;
+  const letter = raw.match(/^[A-Da-d]/);
+  if (letter) return Math.min(letter[0].toUpperCase().charCodeAt(0) - 65, Math.max(options.length - 1, 0));
+  const num = raw.match(/\d+/);
+  if (num) {
+    const n = Number(num[0]);
+    if (n >= 0 && n < options.length) return n;
+    if (n >= 1 && n <= options.length) return n - 1;
+  }
+  const idx = options.findIndex(o => String(o).trim() === raw || raw.includes(String(o).trim()));
+  return idx >= 0 ? idx : 0;
+}
+
+function _normalizeQuizItems(data, topic){
+  let source = data;
+  if (source && source.content) source = _parseMaybeJson(source.content) || source.content;
+  if (typeof source === 'string') source = _parseMaybeJson(source) || source;
+  let items = [];
+  if (Array.isArray(source)) items = source;
+  else if (source && Array.isArray(source.items)) items = source.items;
+  else if (source && Array.isArray(source.questions)) items = source.questions;
+  else if (source && source.raw_json) items = _normalizeQuizItems(source.raw_json, topic);
+  if (!Array.isArray(items)) items = [];
+  return items.map(function(it, idx){
+    const q = it || {};
+    let options = q.options || q.choices || q.answers || [];
+    if (!Array.isArray(options)) options = String(options).split(/[;；\n]/).filter(Boolean);
+    options = options.map(function(o){
+      if (typeof o === 'object') return String(o.text || o.label || o.value || '');
+      return String(o || '').replace(/^[A-Da-d][.、:：]\s*/, '');
+    }).filter(Boolean);
+    if (options.length < 2) options = ['正确', '错误'];
+    const answer = _answerToIndex(q.answer ?? q.correct_answer ?? q.correct ?? q.correctIndex, options);
+    return {
+      question: q.question || q.title || q.stem || ('关于「' + (topic || '当前主题') + '」的练习题 ' + (idx + 1)),
+      options,
+      answer,
+      knowledge_point: q.knowledge_point || q.knowledgePoint || topic || '当前主题',
+      explanation: q.explanation || q.analysis || q.reason || '',
+    };
+  }).filter(it => it.question && it.options.length >= 2);
 }
 
 async function api(path, opts={}) {
@@ -538,9 +646,9 @@ function _renderMermaidPanel(el, code, title){
 
 function _renderQuizPanel(el, items, topic){
   if (!el) return;
-  const quizItems = Array.isArray(items) ? items : [];
+  const quizItems = _normalizeQuizItems(items, topic);
   if (!quizItems.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>暂无练习题</p></div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><p>暂无练习题</p><button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="loadArtifactPreview(\'quiz\', ' + JSON.stringify(topic || _currentLearningTopic()) + ')">重新生成</button></div>';
     return;
   }
   S.currentQuiz = { topic: topic || '', items: quizItems };
@@ -602,12 +710,12 @@ async function submitQuizAnswer(idx){
       method: 'POST',
       body: JSON.stringify({
         course_id: S.courseId,
-        topic: quiz.topic,
+        topic: item.knowledge_point || quiz.topic || _currentLearningTopic(),
         question_text: item.question || '',
         selected_answer: selectedText,
         correct_answer: correctText,
         is_correct: isCorrect,
-        knowledge_point: quiz.topic,
+        knowledge_point: item.knowledge_point || quiz.topic || _currentLearningTopic(),
         explanation: item.explanation || '',
       }),
     });
@@ -623,6 +731,7 @@ async function submitQuizAnswer(idx){
 }
 
 async function loadArtifactPreview(type, topic){
+  topic = topic || _currentLearningTopic();
   const assistantPage = document.getElementById('page-assistant');
   if (!assistantPage || !assistantPage.classList.contains('active')) {
     navTo('assistant');
@@ -655,13 +764,9 @@ async function loadArtifactPreview(type, topic){
       return;
     }
     if (type === 'mindmap') {
-      _renderMermaidPanel(panel, d.mermaid || d.content || '', d.title);
+      _renderMermaidPanel(panel, _normalizeMermaid(d.mermaid || d.raw_json || d.content || d, topic), d.title || (topic + ' · 思维导图'));
     } else if (type === 'quiz') {
-      let items = d.items;
-      if (!items && d.content) {
-        try { const parsed = JSON.parse(d.content); items = parsed.items || parsed; } catch (_) {}
-      }
-      _renderQuizPanel(panel, items, topic);
+      _renderQuizPanel(panel, d.items || d.raw_json || d.content || d, topic);
     } else if (type === 'ppt') {
       _renderPptPanel(panel, d);
     } else {
@@ -674,6 +779,7 @@ async function loadArtifactPreview(type, topic){
 }
 
 window.quickGenerateFromChat = function(type, topic){
+  topic = topic || _currentLearningTopic();
   if (['mindmap', 'quiz', 'lecture_doc', 'ppt', 'reading', 'video_script'].includes(type)) {
     const assistantPage = document.getElementById('page-assistant');
     if (assistantPage && assistantPage.classList.contains('active')) {
@@ -1298,6 +1404,9 @@ function _finishAskResponse(el, msg, d, box){
   const answer = d.answer || d.content || d.result || '';
   const refs = d.refs || d.citations || [];
   const suggestions = d.resource_suggestions || [];
+  const topicFromPackage = d.resource_package && (d.resource_package.topic || d.resource_package.title);
+  S.lastQuestion = msg || S.lastQuestion || '';
+  S.lastTopic = msg || topicFromPackage || S.lastTopic || '';
   S.lastAnswer = answer;
   if (el) {
     el.innerHTML = '<div class="msg-content">' + esc(answer || '已收到问题，当前环境暂未返回正式答案。') + '</div>' +
@@ -1389,6 +1498,8 @@ async function sendQuestion(){
   const input = document.getElementById('chat-input');
   const msg = input ? input.value.trim() : '';
   if (!msg) return toast('请输入问题', 'info');
+  S.lastQuestion = msg;
+  S.lastTopic = msg;
   const box = document.getElementById('chat-messages');
   if (box) box.innerHTML += '<div class="msg-bubble user"><div class="msg-content">' + esc(msg) + '</div></div>';
   if (input) input.value = '';
@@ -1783,9 +1894,7 @@ window.createNewSession = createNewSession;
 window.sendQuestion = sendQuestion;
 window._sendQuestion = sendQuestion;
 window._quickGenerate = function(type){
-  const input = document.getElementById('chat-input');
-  const topic = input ? input.value.trim() : '';
-  quickGenerateFromChat(type, topic || '当前学习主题');
+  quickGenerateFromChat(type, _currentLearningTopic());
 };
 window._avatarSpeakAnswer = function(){
   if (!S.lastAnswer) {

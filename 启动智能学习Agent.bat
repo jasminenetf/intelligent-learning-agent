@@ -46,8 +46,17 @@ start "SmartLearning-Backend" /D "%BACKEND_DIR%" cmd /k "python -m uvicorn app.d
 echo [3/4] Starting frontend...
 start "SmartLearning-Frontend" /D "%FRONTEND_DIR%" cmd /k "python -m http.server 5173 --bind 127.0.0.1"
 
-echo [4/4] Waiting and opening browser...
+echo [4/5] Waiting for backend health check...
 timeout /t 4 /nobreak >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8010/health' -UseBasicParsing -TimeoutSec 8; if ($r.StatusCode -ne 200) { exit 1 } } catch { exit 1 }" >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] Backend health check failed: http://127.0.0.1:8010/health
+  echo Please check the SmartLearning-Backend window for Python dependency or startup errors.
+  pause
+  exit /b 1
+)
+
+echo [5/5] Opening browser...
 start "" "%APP_URL%"
 if errorlevel 1 explorer "%APP_URL%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%APP_URL%'" >nul 2>nul

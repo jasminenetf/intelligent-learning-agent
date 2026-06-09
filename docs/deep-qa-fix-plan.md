@@ -57,12 +57,12 @@
   - `install.sh` 完成后给出 Windows / Linux 对应启动方式。
   - 验收：安装后的下一步不会误导用户继续双击安装器。
 
-- [ ] 增加一键启动健康检查。
+- [x] 增加一键启动健康检查。
   - 启动后自动请求 `/health` 和前端首页。
   - 后端启动失败时窗口输出明确原因，例如缺少依赖、端口占用、Python 不存在。
   - 验收：失败不再只闪退或卡住。
 
-- [ ] 复跑 P0 验证。
+- [x] 复跑 P0 验证。
   - `python -m py_compile ...`
   - `node --check frontend-demo/app.js`
   - `P0_SMOKE_BASE=http://127.0.0.1:8010 python scripts/verify_p0_smoke.py`
@@ -75,9 +75,9 @@
   - 设置明确超时和 fallback，不让用户等待 25-40 秒无反馈。
   - 验收：首屏 1 秒内显示任务已创建，最终结果可轮询获取。
 
-- [ ] 补齐测试门禁。
+- [x] 补齐后端基础测试门禁。
   - 新增后端 pytest：auth 免登录、settings、ask、generate、resources、learning-report。
-  - 新增前端最小 E2E：打开页面、导航、生成思维导图、生成练习题、资源中心下载。
+  - 前端最小 E2E 仍在 P1 队列中，需先安装 Playwright 依赖。
   - 验收：`pytest` 不再显示 `no tests ran`。
 
 - [ ] 修复 E2E 依赖安装路径。
