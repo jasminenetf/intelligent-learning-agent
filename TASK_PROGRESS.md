@@ -90,6 +90,27 @@
   - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
 - 本轮结论：当前候选状态仍满足初赛提交候选标准；本轮无 S0/S1 新缺口。
 
+## 2026-06-10 第四次上传前复核
+
+- 当前分支：`feat/product-workbench-core-pipeline`。
+- 恢复时未提交业务修改：无；本节用于记录本次上传前复核。
+- 最近提交：
+  - `1d3fb6d chore: harden competition demo candidate`
+  - `2d02ace chore: harden competition demo candidate`
+  - `d673f00 chore: harden competition demo candidate`
+  - `1e1d683 Add official A3 defense deck`
+  - `c448132 Add static QA workflow and update delivery docs`
+- 本轮继续原则：上传前只做质量门禁和安全扫描；如果发现 S0/S1 缺口再修复。
+- 本轮验证：
+  - `python -m py_compile backend/app/demo_main.py scripts/verify_p0_smoke.py scripts/deep_qa_check.py`：通过。
+  - `node --check frontend-demo/app.js`：通过。
+  - `python -m pytest -q backend/tests`：通过，4 passed，1 个 StarletteDeprecationWarning。
+  - `python scripts/verify_p0_smoke.py`：通过，`=== ALL CHECKS PASSED ===`。
+  - `python scripts/deep_qa_check.py`：通过，`=== DEEP QA PASSED ===`。
+  - `npx playwright test`：通过，9 passed。
+  - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
+- 本轮结论：当前候选状态仍满足 GitHub 提交标准；本轮仅更新复核记录，无业务代码改动。
+
 ## 2026-06-10 第三次恢复现场
 
 - 当前分支：`feat/product-workbench-core-pipeline`。
