@@ -29,6 +29,7 @@ const S = {
   autoArtifactTopicKey: '',
   autoArtifactRunning: false,
   mermaidZoom: 1.35,
+  mermaidFitMode: false,
   currentProfile: null,
 };
 
@@ -656,21 +657,52 @@ function _applyMermaidZoom(){
   if (!host) return;
   const svg = host.querySelector('svg');
   if (!svg) return;
-  const zoom = Math.max(0.8, Math.min(2.4, Number(S.mermaidZoom || 1.35)));
-  const baseWidth = Math.max(1120, Math.min(1700, Math.round((host.clientWidth || 1000) * 1.18)));
-  svg.style.width = Math.round(baseWidth * zoom) + 'px';
+  const viewBox = svg.viewBox && svg.viewBox.baseVal;
+  const naturalW = viewBox && viewBox.width ? viewBox.width : (svg.getBBox ? svg.getBBox().width : 1100);
+  const naturalH = viewBox && viewBox.height ? viewBox.height : (svg.getBBox ? svg.getBBox().height : 900);
+  let targetW;
+  if (S.mermaidFitMode) {
+    const fitW = Math.max(260, (host.clientWidth || 900) - 36);
+    const fitH = Math.max(260, (host.clientHeight || 620) - 36);
+    const scale = Math.max(0.18, Math.min(fitW / naturalW, fitH / naturalH, 1.6));
+    targetW = Math.max(240, Math.round(naturalW * scale));
+  } else {
+    const zoom = Math.max(0.25, Math.min(2.6, Number(S.mermaidZoom || 1.1)));
+    targetW = Math.max(260, Math.round(naturalW * zoom));
+  }
   svg.style.maxWidth = 'none';
+  svg.style.minWidth = '0';
+  svg.style.width = targetW + 'px';
   svg.style.height = 'auto';
   svg.style.display = 'block';
+  host.scrollLeft = S.mermaidFitMode ? 0 : host.scrollLeft;
+  host.scrollTop = S.mermaidFitMode ? 0 : host.scrollTop;
 }
 
 function _zoomMermaid(delta){
-  S.mermaidZoom = Math.max(0.8, Math.min(2.4, Number(S.mermaidZoom || 1.35) + delta));
+  if (S.mermaidFitMode) {
+    const host = document.getElementById('mermaid-host');
+    const svg = host && host.querySelector('svg');
+    if (svg) {
+      const viewBox = svg.viewBox && svg.viewBox.baseVal;
+      const naturalW = viewBox && viewBox.width ? viewBox.width : (svg.getBBox ? svg.getBBox().width : 1100);
+      const renderedW = svg.getBoundingClientRect().width || naturalW;
+      S.mermaidZoom = renderedW / naturalW;
+    }
+  }
+  S.mermaidFitMode = false;
+  S.mermaidZoom = Math.max(0.25, Math.min(2.6, Number(S.mermaidZoom || 1.1) + delta));
   _applyMermaidZoom();
 }
 
 function _resetMermaidZoom(){
-  S.mermaidZoom = 1.35;
+  S.mermaidFitMode = false;
+  S.mermaidZoom = 1.1;
+  _applyMermaidZoom();
+}
+
+function _fitMermaidToView(){
+  S.mermaidFitMode = true;
   _applyMermaidZoom();
 }
 
@@ -682,6 +714,7 @@ function _renderMermaidPanel(el, code, title){
         '<div class="mt-title-area"><div class="mt-title">' + esc(title || '知识结构图') + '</div><div class="mt-subtitle">已按学习顺序展开，可横向/纵向滚动查看细节</div></div>' +
         '<div class="mt-actions">' +
           '<span class="mindmap-status-tag generated">已生成</span>' +
+          '<button type="button" class="btn btn-sm btn-primary" onclick="_fitMermaidToView()">全图</button>' +
           '<button type="button" class="btn btn-sm btn-outline" onclick="_zoomMermaid(0.18)">放大</button>' +
           '<button type="button" class="btn btn-sm btn-outline" onclick="_zoomMermaid(-0.18)">缩小</button>' +
           '<button type="button" class="btn btn-sm btn-outline" onclick="_resetMermaidZoom()">重置</button>' +
@@ -692,6 +725,7 @@ function _renderMermaidPanel(el, code, title){
     '</div>';
   const host = document.getElementById('mermaid-host');
   if (!host) return;
+  S.mermaidFitMode = true;
   const node = document.createElement('div');
   node.className = 'mermaid';
   node.textContent = code || 'graph TD\n  A[暂无导图]';
@@ -2076,6 +2110,7 @@ window.quickGenerateFromChat = quickGenerateFromChat;
 window.loadArtifactPreview = loadArtifactPreview;
 window._zoomMermaid = _zoomMermaid;
 window._resetMermaidZoom = _resetMermaidZoom;
+window._fitMermaidToView = _fitMermaidToView;
 window.downloadAuthFile = downloadAuthFile;
 window.submitQuizAnswer = submitQuizAnswer;
 window.joinReviewPlan = joinReviewPlan;

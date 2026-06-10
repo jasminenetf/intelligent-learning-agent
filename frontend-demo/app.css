@@ -132,9 +132,9 @@ a{color:var(--primary);text-decoration:none}
 
 /* Canvas */
 .mindmap-canvas-wrap{flex:1;overflow:hidden;position:relative;background:#fff;display:flex;align-items:center;justify-content:center;min-height:420px;cursor:grab}
-.mindmap-canvas-wrap.readable{align-items:flex-start;justify-content:flex-start;overflow:auto;min-height:620px;padding:22px;background:linear-gradient(180deg,#fff,var(--gray-50))}
-.mindmap-canvas-wrap.readable .mermaid{min-width:1120px}
-.mindmap-canvas-wrap.readable svg{max-width:none!important;min-width:1120px;font-size:16px}
+.mindmap-canvas-wrap.readable{align-items:flex-start;justify-content:flex-start;overflow:auto;min-height:620px;padding:18px;background:linear-gradient(180deg,#fff,var(--gray-50))}
+.mindmap-canvas-wrap.readable .mermaid{min-width:0}
+.mindmap-canvas-wrap.readable svg{max-width:none!important;min-width:0!important;font-size:16px}
 .mindmap-canvas-wrap.readable .node rect,
 .mindmap-canvas-wrap.readable .node polygon,
 .mindmap-canvas-wrap.readable .node circle,
