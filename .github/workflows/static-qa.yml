@@ -1,0 +1,89 @@
+name: Static QA
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Python syntax checks
+        run: |
+          python -m py_compile backend/app/demo_main.py
+          python -m py_compile scripts/verify_p0_smoke.py
+          python -m py_compile scripts/deep_qa_check.py
+
+      - name: Frontend syntax check
+        run: node --check frontend-demo/app.js
+
+      - name: Secret hygiene scan
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          root = Path(".").resolve()
+          allow_files = {
+              "README.md",
+              ".env.example",
+              "backend/.env.example",
+              "docs/final/模型与配置说明.md",
+              "docs/final/朋友下载运行说明.md",
+          }
+          skip_dirs = {
+              ".git",
+              ".venv",
+              "venv",
+              "__pycache__",
+              "node_modules",
+              "data",
+              ".local",
+              ".pytest_cache",
+          }
+          suffixes = {".py", ".js", ".css", ".md", ".txt", ".bat", ".sh", ".yml", ".yaml", ".json", ".example"}
+          patterns = [
+              re.compile(r"(?i)(api[_-]?key|api[_-]?password|secret)\s*=\s*['\"]?([A-Za-z0-9_\-:]{16,})"),
+              re.compile(r"sk-[A-Za-z0-9]{20,}"),
+          ]
+          hits = []
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              rel = path.relative_to(root).as_posix()
+              if rel in allow_files:
+                  continue
+              if any(part in skip_dirs for part in path.parts):
+                  continue
+              if path.suffix.lower() not in suffixes:
+                  continue
+              text = path.read_text(encoding="utf-8", errors="ignore")
+              for pattern in patterns:
+                  for match in pattern.finditer(text):
+                      value = match.group(match.lastindex or 0)
+                      lower = value.lower()
+                      if "your" in lower or "mock" in lower or "example" in lower:
+                          continue
+                      hits.append(f"{rel}: {match.group(0)[:80]}")
+          if hits:
+              print("Possible secrets found:")
+              print("\n".join(hits[:20]))
+              sys.exit(1)
+          print("No obvious secrets found.")
+          PY

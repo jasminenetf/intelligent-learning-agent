@@ -17,7 +17,7 @@
 | HuggingFace Transformers | 模型加载 | https://github.com/huggingface/transformers | Apache 2.0 | 间接依赖 |
 | PyMuPDF | PDF 解析 | https://github.com/pymupdf/PyMuPDF | AGPL-3.0 | services/document_parser.py, services/ocr_service.py |
 | python-docx | DOCX 解析 | https://github.com/python-openxml/python-docx | MIT | services/document_parser.py |
-| python-pptx | PPTX 生成 | https://github.com/scanny/python-pptx | MIT | services/ppt_service.py |
+| python-pptx | 历史 PPTX 生成能力，当前答辩主链路改用 Markdown PPT | https://github.com/scanny/python-pptx | MIT | services/ppt_service.py |
 | OpenAI Python SDK | LLM API 调用 | https://github.com/openai/openai-python | Apache 2.0 | services/llm_provider.py |
 | SQLAdmin | 管理后台 | https://github.com/aminalaee/sqladmin | BSD-3 | app/admin.py |
 | Mermaid.js | 思维导图格式 | https://github.com/mermaid-js/mermaid | MIT | 输出格式 |
@@ -28,5 +28,6 @@
 
 | 服务 | 用途 | 说明 |
 |------|------|------|
-| DeepSeek API | LLM 推理 | 外部商业 API，非开源项目 |
-| 科大讯飞 Spark API | LLM 推理（备选）| 外部商业 API，非开源项目 |
+| 科大讯飞 Spark API | 答辩主推理引擎 | 外部商业 API，非开源项目 |
+| DeepSeek API | 开发/演示备用推理引擎 | 外部商业 API，非开源项目 |
+| Mock fallback | 离线兜底演示 | 本项目本地规则，不是外部开源项目 |

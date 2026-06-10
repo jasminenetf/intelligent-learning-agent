@@ -192,7 +192,7 @@ def main() -> int:
             print("[PASS] GET /health")
     except Exception as exc:
         print(f"[SKIP] backend not running: {exc}")
-        print("Start with: cd backend && python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000")
+        print("Start with: cd backend && python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010")
         return 2
 
     # bootstrap (guest)

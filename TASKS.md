@@ -21,6 +21,7 @@
 - P0 smoke 验证脚本 (`scripts/verify_p0_smoke.py`)
 - 深度 QA 验证脚本 (`scripts/deep_qa_check.py`)
 - Playwright 前端 E2E 冒烟测试
+- GitHub Actions 静态质量门禁
 - 一键启动脚本默认启动免登录 Demo 后端
 - 所有功能入口本地 Demo 模式无登录/权限限制
 - API 设置页支持打开后直接填写 Spark/DeepSeek Key
@@ -38,6 +39,7 @@
 - Demo 数据与演示流程固化
 - 一键启动后的真实 API Key 联调
 - 答辩 PPT 正式文件制作
+- GitHub Actions 与本地 deep QA 持续对齐
 
 ## ⬜ 后续 P2/P3
 - 正式注册/登录、角色权限与 Admin 认证加固
