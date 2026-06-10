@@ -60,3 +60,32 @@
   - 会话页新增“一键演示”按钮，自动填入函数极限标准问题并发送。
   - Playwright E2E 端口改为 8010，测试主题改为函数极限。
   - README/RUNBOOK/.env.example 更新；新增 `DEMO_SCRIPT_7MIN.md`、`SUBMISSION_CHECKLIST.md`、`AI_CODING_USAGE.md`。
+
+## 2026-06-10 再次恢复现场
+
+- 当前分支：`feat/product-workbench-core-pipeline`。
+- 恢复时未提交修改：无。
+- 最近提交：
+  - `d673f00 chore: harden competition demo candidate`
+  - `1e1d683 Add official A3 defense deck`
+  - `c448132 Add static QA workflow and update delivery docs`
+  - `dd191d0 Strengthen gaoshu demo loop and deep QA`
+  - `f310ddf Fit mindmap to preview viewport`
+  - `6182214 Explain quiz mistakes inline and expand lectures`
+  - `09d5884 Generate teaching-focused PPT markdown decks`
+  - `b3b7e94 Export PPT resources as readable markdown decks`
+  - `4535d04 Personalize learning path and profile updates`
+  - `af7db85 Auto generate readable study artifacts`
+- 关键提交检查：
+  - `18ede88 Fix learning artifact generation quality`：存在。
+  - `09d5884 Generate teaching-focused PPT markdown decks`：存在。
+- 本轮继续原则：不重构、不重复 P0 修复；只复核当前候选成品状态，发现 S0/S1 再修。
+- 本轮验证：
+  - `python -m py_compile backend/app/demo_main.py scripts/verify_p0_smoke.py scripts/deep_qa_check.py`：通过。
+  - `node --check frontend-demo/app.js`：通过。
+  - `python -m pytest -q backend/tests`：通过，4 passed，1 个 StarletteDeprecationWarning。
+  - `python scripts/verify_p0_smoke.py`：通过，`=== ALL CHECKS PASSED ===`。
+  - `python scripts/deep_qa_check.py`：通过，`=== DEEP QA PASSED ===`。
+  - `npx playwright test`：通过，9 passed。
+  - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
+- 本轮结论：当前候选状态仍满足初赛提交候选标准；本轮无 S0/S1 新缺口。
