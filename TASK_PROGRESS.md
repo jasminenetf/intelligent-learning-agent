@@ -111,6 +111,36 @@
   - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
 - 本轮结论：当前候选状态仍满足 GitHub 提交标准；本轮仅更新复核记录，无业务代码改动。
 
+## 2026-06-10 第五次完成度审计
+
+- 当前分支：`feat/product-workbench-core-pipeline`。
+- 恢复时未提交修改：无。
+- 最近提交：
+  - `b5d37d3 chore: record github upload verification`
+  - `1d3fb6d chore: harden competition demo candidate`
+  - `2d02ace chore: harden competition demo candidate`
+  - `d673f00 chore: harden competition demo candidate`
+  - `1e1d683 Add official A3 defense deck`
+  - `c448132 Add static QA workflow and update delivery docs`
+  - `dd191d0 Strengthen gaoshu demo loop and deep QA`
+  - `f310ddf Fit mindmap to preview viewport`
+  - `6182214 Explain quiz mistakes inline and expand lectures`
+  - `09d5884 Generate teaching-focused PPT markdown decks`
+- 关键提交检查：
+  - `18ede88 Fix learning artifact generation quality`：存在。
+  - `09d5884 Generate teaching-focused PPT markdown decks`：存在。
+- 本轮验证：
+  - `python -m py_compile backend/app/demo_main.py scripts/verify_p0_smoke.py scripts/deep_qa_check.py`：通过。
+  - `node --check frontend-demo/app.js`：通过。
+  - `python -m pytest -q backend/tests`：通过，4 passed，1 个 StarletteDeprecationWarning。
+  - `python scripts/verify_p0_smoke.py`：通过，`=== ALL CHECKS PASSED ===`。
+  - `python scripts/deep_qa_check.py`：通过，`=== DEEP QA PASSED ===`。
+  - `npx playwright test`：通过，9 passed。
+  - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
+  - 1366×768 浏览器验收：通过。页面无控制台错误、无横向溢出；一键演示后答案、课程依据、Agent 协作面板可见；点击生成思维导图后导图面板可见且无横向溢出。
+- 本轮未重复消耗 Spark 额度；真实 Spark 连通性仍以此前单独测试记录为依据，提交文件中不保存 API Key。
+- 本轮结论：当前候选状态满足“初赛可提交候选成品 + 人工最终验收”标准；本轮只新增完成度审计记录。
+
 ## 2026-06-10 第三次恢复现场
 
 - 当前分支：`feat/product-workbench-core-pipeline`。
