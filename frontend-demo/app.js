@@ -554,9 +554,11 @@ function _renderAskSidebar(data){
       (refs.length ? refs.map(x => {
         const label = typeof x === 'string' ? x : (x.source || x.chunk_id || '课程片段');
         const page = (x && x.page_number) ? ' p.' + x.page_number : '';
-        return '<div class="course-card" style="margin-top:6px"><div class="course-meta"><span>' + esc(String(label) + page) + '</span></div></div>';
+        const snippet = x && (x.content || x.snippet) ? '<p style="font-size:12px;color:var(--gray-500);margin-top:4px">' + esc(String(x.content || x.snippet).slice(0, 96)) + '</p>' : '';
+        return '<div class="course-card" style="margin-top:6px"><div class="course-meta"><span>课程片段 ' + esc(String(label) + page) + '</span></div>' + snippet + '</div>';
       }).join('') : '<p style="font-size:12px;color:var(--gray-400)">本次回答未检索到课程片段</p>') +
-      '<div style="margin-top:8px"><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成学习资源</button></div>';
+      '<div style="margin-top:8px"><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成学习资源</button></div>' +
+      '<div style="margin-top:12px" id="agent-viz"><h4>🤖 学习助手协作</h4><p style="font-size:11px;color:var(--gray-400)">协作轨迹将在问答后显示</p></div>';
   }
   const agentViz = document.getElementById('agent-viz');
   const traces = data.agent_traces || [];
@@ -1148,7 +1150,10 @@ function renderResourceJobResults(resources){
     const type = _resourceTypeOf(r);
     const title = r.title || resourceLabel(type);
     const fname = title + _resourceFileExt(type);
-    return '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>' + esc(resourceLabel(type)) + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+    const auditMeta = '<div class="course-meta"><span>Provider ' + esc(r.provider || r.generated_by || 'mock_curriculum') + '</span><span>Model ' + esc(r.model || 'mock_curriculum') + '</span><span>Fallback ' + esc(String(!!r.fallback_used)) + '</span><span>RAG ' + esc(String(!!r.used_rag)) + '</span><span>画像 ' + esc(String(!!r.used_profile)) + '</span><span>引用片段 ' + esc(String((r.context_chunks || r.evidence || []).length || 0)) + '</span></div>';
+    return '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>' + esc(resourceLabel(type)) + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div>' + auditMeta +
+      (r.question ? '<p style="font-size:12px;color:var(--gray-500);margin-top:6px">问题：' + esc(r.question) + '</p>' : '') +
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
       _resourceDownloadBtn(r.resource_id, r.download_url, fname) +
       '<button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">去资源中心</button></div></div>';
   }).join('');
@@ -1232,7 +1237,7 @@ async function loadGenerator(){
   el.innerHTML = '<div class="grid grid-2">' +
     '<div class="card"><div class="card-header"><h3>多智能体资源生成</h3></div>' +
     '<div class="form-group"><label>当前课程</label><input readonly value="' + esc(S.courseName || '') + '"></div>' +
-    '<div class="form-group"><label>学习主题</label><input id="resource-topic" class="input" placeholder="例如：过拟合与正则化" value="' + esc(prefill.topic || '') + '"></div>' +
+    '<div class="form-group"><label>学习主题</label><input id="resource-topic" class="input" placeholder="例如：函数极限的定义、左右极限、无穷小与连续" value="' + esc(prefill.topic || '') + '"></div>' +
     '<div class="form-group"><label>学习目标</label><input id="resource-goal" class="input" placeholder="例如：期末复习 / 考研强化"></div>' +
     '<div class="form-group"><label>难度</label><select id="resource-difficulty" class="input"><option value="auto">自动</option><option value="easy">简单</option><option value="medium">中等</option><option value="hard">困难</option></select></div>' +
     '<div class="form-group"><label>资源类型</label><div class="resource-type-grid">' +
@@ -1326,9 +1331,16 @@ function _resourceFileCards(files){
     meta.push('<span>' + esc(f.status === 'completed' ? '已生成' : (f.status || '可用')) + '</span>');
     if (course) meta.push('<span>课程 ' + esc(course) + '</span>');
     if (createdAt) meta.push('<span>' + esc(String(createdAt).slice(0, 19).replace('T', ' ')) + '</span>');
+    meta.push('<span>Provider ' + esc(f.provider || f.generated_by || 'mock_curriculum') + '</span>');
+    meta.push('<span>Fallback ' + esc(String(!!f.fallback_used)) + '</span>');
+    meta.push('<span>RAG ' + esc(String(!!f.used_rag)) + '</span>');
+    meta.push('<span>画像 ' + esc(String(!!f.used_profile)) + '</span>');
+    meta.push('<span>引用片段 ' + esc(String((f.context_chunks || f.evidence || []).length || 0)) + '</span>');
     const rid = esc(f.resource_id);
     const oname = esc(origin);
-    return '<div class="course-card"><h4>' + icon + ' ' + oname + '</h4><div class="course-meta">' + meta.join('') + '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+    return '<div class="course-card"><h4>' + icon + ' ' + oname + '</h4><div class="course-meta">' + meta.join('') + '</div>' +
+      (f.question ? '<p style="font-size:12px;color:var(--gray-500);margin-top:6px">问题：' + esc(f.question) + '</p>' : '') +
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
       _resourceDownloadBtn(f.resource_id, f.download_url, origin + _resourceFileExt(type)) +
       '<button class="btn btn-sm btn-outline" onclick="bookmarkResource(' + jsAttrArg(rid) + ', ' + jsAttrArg(oname) + ')">收藏</button><button class="btn btn-sm btn-outline" onclick="shareResource(' + jsAttrArg(rid) + ', ' + jsAttrArg(oname) + ')">分享</button></div></div>';
   }).join('');
@@ -1620,12 +1632,16 @@ async function loadSettings(){
       '<div class="form-group"><label>权限状态</label><input readonly value="已开放全部设置"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'dashboard\')">进入系统</button><button class="btn btn-outline" onclick="loadSettings()">刷新状态</button></div></div>' +
       '<div class="card"><div class="card-header"><h3>推理引擎配置</h3></div>' +
-      '<div class="course-card"><h4>当前：' + esc(d.llm_provider || '未配置') + '</h4><div class="course-meta"><span>模型 ' + esc(d.llm_model || '未知') + '</span><span>' + (d.is_mock ? 'Mock' : '在线') + '</span></div><div class="course-meta"><span>星火：' + sparkReady + '</span><span>DeepSeek：' + deepseekReady + '</span></div></div>' + llmPanel + '</div></div>' +
+      '<div class="course-card"><h4>当前：<span id="llm-provider">' + esc(d.llm_provider || '未配置') + '</span></h4><div class="course-meta"><span>模型 ' + esc(d.llm_model || '未知') + '</span><span>' + (d.is_mock ? '本地演示兜底 Mock' : '在线模型链路') + '</span></div><div class="course-meta"><span>星火：' + sparkReady + '</span><span>DeepSeek：' + deepseekReady + '</span><span>Fallback：' + esc(d.fallback_provider || 'mock') + '</span></div></div>' + llmPanel + '</div></div>' +
       '<div class="card" style="margin-top:12px"><div class="card-header"><h3>系统状态</h3></div>' +
       '<div class="grid grid-3"><div class="card grid-stat"><div class="val">' + (d.spark_configured ? '✓' : '—') + '</div><div class="lbl">Spark</div></div>' +
       '<div class="card grid-stat"><div class="val">' + (d.deepseek_configured ? '✓' : '—') + '</div><div class="lbl">DeepSeek</div></div>' +
       '<div class="card grid-stat"><div class="val">' + (d.fallback_available ? '✓' : '—') + '</div><div class="lbl">Fallback</div></div></div>' +
-      '<div class="course-card" style="margin-top:12px"><h4>问答模式</h4><div class="course-meta"><span>SSE 流式 ' + (S.useStreamAsk ? '已开启' : '已关闭') + '</span><span>正式学习模式已启用</span></div></div></div>';
+      '<div class="grid grid-3" style="margin-top:12px"><div class="card grid-stat"><div class="val">' + esc(String(d.chunks_count || 0)) + '</div><div class="lbl">知识片段</div></div>' +
+      '<div class="card grid-stat"><div class="val">' + esc(String(d.vector_count || 0)) + '</div><div class="lbl">Chroma 向量</div></div>' +
+      '<div class="card grid-stat"><div class="val">' + esc(d.knowledge_base_status || 'unknown') + '</div><div class="lbl">知识库状态</div></div></div>' +
+      '<div class="course-card" style="margin-top:12px"><h4>问答模式</h4><div class="course-meta"><span>SSE 流式 ' + (S.useStreamAsk ? '已开启' : '已关闭') + '</span><span>课程：' + esc(d.course_name || S.courseName || '高等数学上册') + '</span><span>Embedding：' + esc(d.embedding_provider || 'hash_mock') + '</span></div>' +
+      '<p style="font-size:12px;color:var(--danger);margin-top:8px">' + esc(d.embedding_note || 'hash_mock 仅用于流程验证，不代表真实语义向量效果') + '</p></div></div>';
   } catch (e) {
     _showPageError(el, '设置加载失败', e.message || '未知错误');
   }
@@ -2223,6 +2239,14 @@ window.sendQuestion = sendQuestion;
 window._sendQuestion = sendQuestion;
 window._quickGenerate = function(type){
   quickGenerateFromChat(type, _currentLearningTopic());
+};
+window._runOneClickDemo = async function(){
+  navTo('assistant');
+  const input = document.getElementById('chat-input');
+  const question = '我不懂函数极限，讲清定义、常见误区，并给一个例题。我基础比较差。';
+  if (input) input.value = question;
+  toast('一键演示：正在按函数极限问题跑完整学习闭环', 'info');
+  await sendQuestion();
 };
 window._avatarSpeakAnswer = function(){
   if (!S.lastAnswer) {

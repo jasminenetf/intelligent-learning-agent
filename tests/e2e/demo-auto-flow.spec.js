@@ -1,7 +1,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
-const API = 'http://127.0.0.1:8000';
+const API = process.env.E2E_API_BASE || 'http://127.0.0.1:8010';
 
 async function ensureLoggedIn(page) {
   await page.goto('/');
@@ -45,7 +45,7 @@ test('assistant demo question renders agent bubble', async ({ page }) => {
   await page.evaluate(() => window.navTo('assistant'));
   await page.waitForTimeout(500);
   const input = page.locator('#chat-input');
-  await input.fill('什么是过拟合？');
+  await input.fill('我不懂函数极限，讲清定义、常见误区，并给一个例题。我基础比较差。');
   await page.locator('button:has-text("发送")').click();
   await page.waitForTimeout(10000);
   const agentBubble = page.locator('#chat-messages .msg-bubble.agent').last();
@@ -60,7 +60,7 @@ test('citations panel shows content or empty state', async ({ page }) => {
   await ensureLoggedIn(page);
   await page.evaluate(() => window.navTo('assistant'));
   await page.waitForTimeout(500);
-  await page.locator('#chat-input').fill('过拟合和正则化有什么关系？');
+  await page.locator('#chat-input').fill('函数极限和左右极限有什么关系？');
   await page.locator('button:has-text("发送")').click();
   await page.waitForTimeout(10000);
   const panel = page.locator('#citations-panel');
@@ -77,18 +77,11 @@ test('agent collaboration panel visible after ask', async ({ page }) => {
   await ensureLoggedIn(page);
   await page.evaluate(() => window.navTo('assistant'));
   await page.waitForTimeout(500);
-  await page.locator('#chat-input').fill('什么是梯度下降？');
+  await page.locator('#chat-input').fill('请用高数上教材解释无穷小和函数极限的关系');
   await page.locator('button:has-text("发送")').click();
-  await page.waitForTimeout(8000);
   const viz = page.locator('#agent-viz');
   await expect(viz).toContainText('学习助手协作');
-  const vizText = await viz.innerText();
-  expect(
-    vizText.includes('TutorAgent') ||
-    vizText.includes('InformerAgent') ||
-    vizText.includes('VerifierAgent') ||
-    vizText.includes('协作轨迹')
-  ).toBeTruthy();
+  await expect(viz).toContainText(/TutorAgent|InformerAgent|VerifierAgent|协作轨迹/, { timeout: 20000 });
 });
 
 test('one-click demo fills question and triggers flow', async ({ page }) => {
@@ -97,8 +90,7 @@ test('one-click demo fills question and triggers flow', async ({ page }) => {
   await page.waitForTimeout(500);
   await page.locator('button:has-text("一键演示")').click();
   await page.waitForTimeout(12000);
-  const inputVal = await page.locator('#chat-input').inputValue();
-  expect(inputVal.length).toBeGreaterThan(10);
+  await expect(page.locator('#chat-messages .msg-bubble.user').last()).toContainText('函数极限');
   const agentBubble = page.locator('#chat-messages .msg-bubble.agent').last();
   await expect(agentBubble).toBeVisible();
 });
@@ -115,7 +107,7 @@ test('mindmap quick button updates artifact panel', async ({ page }) => {
   await ensureLoggedIn(page);
   await page.evaluate(() => window.navTo('assistant'));
   await page.waitForTimeout(800);
-  await page.locator('#chat-input').fill('过拟合与正则化');
+  await page.locator('#chat-input').fill('函数极限的定义');
   await page.locator('button:has-text("生成思维导图")').click();
   await page.waitForTimeout(20000);
   const panel = page.locator('#artifact-mindmap');

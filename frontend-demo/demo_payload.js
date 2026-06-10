@@ -1,106 +1,83 @@
 /**
- * demo_payload.js — Stable demo data for competition recording
- * Provides complete AI intro course learning flow even when backend is slow or offline.
- * All data centered on: 人工智能导论 · 过拟合与正则化
+ * demo_payload.js — Stable demo data for competition recording.
+ * Offline fallback only. All data centers on: 高等数学上册 · 函数极限.
  */
 window.DEMO_PAYLOAD = {
   course: {
-    name: "人工智能导论",
-    topic: "过拟合与正则化",
-    status: "课程资料已连接"
+    name: "高等数学上册",
+    topic: "函数极限",
+    status: "本地演示知识库已连接"
   },
 
-  question: "我在学习人工智能导论，机器学习基础一般，容易混淆过拟合和欠拟合。请帮我理解过拟合和正则化的关系。",
+  question: "我不懂函数极限，讲清定义、常见误区，并给一个例题。我基础比较差。",
 
-  answer: "过拟合和正则化是机器学习中的核心概念。一句话总结：过拟合是模型把训练数据的噪声也学进去了，导致泛化能力差；正则化是给模型加上约束，防止它学得太死记硬背。\n\n" +
-    "一、什么是过拟合\n" +
-    "过拟合是指模型在训练集上表现很好，但在测试集或新数据上表现很差。就像学生只背了练习题的答案，换一道题就不会了。常见原因包括：模型过于复杂、训练数据太少、训练时间过长。\n\n" +
-    "二、什么是欠拟合\n" +
-    "欠拟合恰恰相反，模型连训练集上都表现不好。就像学生连基本概念都没掌握。常见原因：模型太简单、特征不够、训练不充分。\n\n" +
-    "三、正则化如何缓解过拟合\n" +
-    "正则化通过在损失函数中添加惩罚项来限制模型复杂度：\n" +
-    "L1 正则化（Lasso）：倾向于产生稀疏权重，自动进行特征选择\n" +
-    "L2 正则化（Ridge）：让权重整体变小但不为0，防止单个特征主导预测\n" +
-    "Dropout：训练时随机丢弃部分神经元，强迫网络学习更鲁棒的特征\n" +
-    "早停法：在验证集误差开始上升时停止训练，避免过度拟合训练数据\n\n" +
-    "四、训练集与验证集的作用\n" +
-    "训练集用于学习模型参数\n" +
-    "验证集用于调整超参数和检测过拟合\n" +
-    "测试集用于最终评估泛化能力\n" +
-    "如果训练误差远小于验证误差，就是过拟合的典型信号\n\n" +
+  answer: "函数极限研究的是：当自变量 x 越来越靠近某个点 x0 时，函数值 f(x) 是否越来越靠近一个确定的数 A。注意，极限关心的是“靠近过程中的趋势”，不是只看 x=x0 这一点的函数值。\n\n" +
+    "一、先用直观话理解\n" +
+    "把 x 想成一个学生一步步走向教室门口 x0，f(x) 是他每一步对应的位置高度。如果无论从左边走来还是从右边走来，f(x) 都越来越接近同一个数 A，我们就说函数在 x 趋向 x0 时的极限是 A。\n\n" +
+    "二、严格定义要看什么\n" +
+    "lim f(x)=A 的意思是：只要你要求函数值离 A 足够近，我总能要求 x 离 x0 足够近，并且在这个范围内 f(x) 都满足要求。这里不要求 f(x0) 一定有定义，也不要求 f(x0)=A。\n\n" +
+    "三、常见误区\n" +
+    "误区1：以为极限存在必须函数在该点有定义。实际不需要，极限看的是趋近趋势。\n" +
+    "误区2：只从左边或右边看。函数极限存在必须左极限和右极限都存在且相等。\n" +
+    "误区3：直接代入不检查条件。代入只是某些连续函数的快捷方法，不是所有题都能这么做。\n\n" +
+    "四、例题\n" +
+    "求 lim(x→1) (x^2-1)/(x-1)。当 x 不等于 1 时，(x^2-1)/(x-1)=(x-1)(x+1)/(x-1)=x+1，所以 x 趋近 1 时函数值趋近 2。虽然原式在 x=1 处分母为0没有定义，但极限仍然存在，等于2。\n\n" +
     "五、学习建议\n" +
-    "先理解偏差-方差权衡的概念\n" +
-    "在实践中对比有无正则化的模型表现\n" +
-    "注意观察训练曲线：训练误差和验证误差的差距\n" +
-    "从简单模型开始，逐步增加复杂度",
+    "先会判断“看趋势还是看点值”，再练左右极限是否相等，最后再做代数化简和等价无穷小等计算技巧。",
 
   citations: [
     {
       id: 1,
-      title: "过拟合与欠拟合",
-      source: "人工智能导论课程资料",
-      section: "模型评估与选择",
-      snippet: "过拟合指模型在训练集上表现优秀，但在新样本上泛化能力显著下降。通常发生在模型复杂度过高而训练数据相对不足时。",
+      title: "函数极限定义",
+      source: "高数上.pdf",
+      section: "第一章 函数与极限",
+      snippet: "函数极限描述自变量趋近某点或无穷远时，函数值趋近某个确定数值的趋势。",
       relevance: "高"
     },
     {
       id: 2,
-      title: "正则化方法",
-      source: "人工智能导论课程资料",
-      section: "模型优化",
-      snippet: "正则化通过给损失函数添加惩罚项来限制模型复杂度。L1产生稀疏解用于特征选择，L2约束权重幅度防止过拟合。",
+      title: "左右极限",
+      source: "高数上.pdf",
+      section: "第一章 函数与极限",
+      snippet: "函数在一点的极限存在，需要左极限和右极限同时存在并且相等。",
       relevance: "高"
     },
     {
       id: 3,
-      title: "训练集与验证集划分",
-      source: "人工智能导论课程资料",
-      section: "实验设计",
-      snippet: "合理划分训练集、验证集和测试集是评估泛化能力的基础。验证集用于调参和早停判断，测试集仅在最终评估时使用。",
-      relevance: "高"
-    },
-    {
-      id: 4,
-      title: "偏差-方差权衡",
-      source: "人工智能导论课程资料",
-      section: "理论基础",
-      snippet: "偏差描述模型预测与真实值的偏离程度，方差描述模型对训练数据波动的敏感度。过拟合对应高方差，欠拟合对应高偏差。",
+      title: "无穷小与极限",
+      source: "高数上.pdf",
+      section: "第一章 函数与极限",
+      snippet: "无穷小是以零为极限的变量，可用于理解和计算极限。",
       relevance: "中"
     }
   ],
 
   mindmap: {
     type: "tree",
-    title: "过拟合与正则化知识框架",
+    title: "函数极限学习框架",
     nodes: [
-      { level: "root", text: "过拟合与正则化" },
-      { level: "branch", text: "过拟合", children: [
-        "训练误差低，测试误差高",
-        "模型复杂度过高",
-        "数据量不足",
-        "高方差"
+      { level: "root", text: "函数极限" },
+      { level: "branch", text: "核心问题", children: [
+        "x 趋近 x0 时 f(x) 是否趋近 A",
+        "看趋近过程，不只看点值",
+        "可用于定义连续、导数和积分"
       ]},
-      { level: "branch", text: "欠拟合", children: [
-        "训练和测试误差都高",
-        "模型过于简单",
-        "高偏差"
+      { level: "branch", text: "判断条件", children: [
+        "左极限存在",
+        "右极限存在",
+        "左右极限相等"
       ]},
-      { level: "branch", text: "正则化方法", children: [
-        "L1 (Lasso) — 特征选择",
-        "L2 (Ridge) — 权重衰减",
-        "Dropout — 随机丢弃神经元",
-        "早停法 — 验证误差上升时停止"
+      { level: "branch", text: "典型方法", children: [
+        "直接代入：适用于连续函数",
+        "因式分解：处理 0/0 型",
+        "等价无穷小：简化局部变化",
+        "夹逼准则：处理震荡或不易化简"
       ]},
-      { level: "branch", text: "训练集/验证集", children: [
-        "训练集：学习参数",
-        "验证集：调参+检测过拟合",
-        "测试集：最终评估"
-      ]},
-      { level: "branch", text: "解决策略", children: [
-        "增加训练数据",
-        "降低模型复杂度",
-        "使用正则化",
-        "交叉验证"
+      { level: "branch", text: "常见误区", children: [
+        "把函数值等同于极限",
+        "忽略左右极限",
+        "不说明适用条件",
+        "只背公式不看趋近方向"
       ]}
     ]
   },
@@ -108,47 +85,29 @@ window.DEMO_PAYLOAD = {
   quiz: [
     {
       id: 1,
-      question: "过拟合的主要表现是什么？",
-      options: ["训练误差低，测试误差高", "训练和测试误差都低", "训练误差高，测试误差低", "训练和测试误差都高"],
-      correctAnswer: 0,
-      explanation: "过拟合的典型特征就是训练集上表现很好但测试集上表现差，说明模型泛化能力不足。",
-      knowledgePoint: "过拟合",
+      question: "函数在 x0 处的极限存在，是否要求 f(x0) 一定有定义？",
+      options: ["一定要求", "不要求", "只有多项式要求", "只有分式函数要求"],
+      correctAnswer: 1,
+      explanation: "极限关注 x 趋近 x0 时 f(x) 的趋势，不关注 x=x0 这一点是否有函数值。",
+      knowledgePoint: "函数极限定义",
       difficulty: "基础"
     },
     {
       id: 2,
-      question: "L2正则化又称为什么？",
-      options: ["Lasso", "Ridge回归", "Dropout", "早停法"],
-      correctAnswer: 1,
-      explanation: "L2正则化通过在损失函数中添加权重平方和惩罚项，又称Ridge回归或权重衰减。",
-      knowledgePoint: "正则化",
+      question: "函数极限存在的关键条件是什么？",
+      options: ["左极限和右极限存在且相等", "只看左极限", "只看右极限", "函数值必须等于0"],
+      correctAnswer: 0,
+      explanation: "两侧趋近同一个数时，双侧极限才存在。",
+      knowledgePoint: "左右极限",
       difficulty: "基础"
     },
     {
       id: 3,
-      question: "Dropout在训练时随机丢弃什么？",
-      options: ["权重", "偏置", "神经元", "梯度"],
-      correctAnswer: 2,
-      explanation: "Dropout在每次训练迭代中随机丢弃一部分神经元，强迫网络不依赖特定神经元，从而增强泛化能力。",
-      knowledgePoint: "正则化",
-      difficulty: "基础"
-    },
-    {
-      id: 4,
-      question: "以下哪个不是防止过拟合的方法？",
-      options: ["增加训练数据", "使用L2正则化", "增加模型层数", "早停法"],
-      correctAnswer: 2,
-      explanation: "增加模型层数会增加模型复杂度，反而可能导致更严重的过拟合。其他三项都是防止过拟合的有效方法。",
-      knowledgePoint: "过拟合",
-      difficulty: "进阶"
-    },
-    {
-      id: 5,
-      question: "验证集的主要作用是什么？",
-      options: ["训练模型参数", "调整超参数和检测过拟合", "最终评估模型", "数据预处理"],
+      question: "求 lim(x→1)(x²-1)/(x-1) 的正确思路是？",
+      options: ["直接说不存在", "先因式分解再约去 x-1", "把 x=0 代入", "只看分母为0"],
       correctAnswer: 1,
-      explanation: "验证集用于超参数调优和过拟合检测。训练集用于学习参数，测试集用于最终评估。",
-      knowledgePoint: "训练集与验证集",
+      explanation: "x 不等于1时可化简为 x+1，因此趋近1时极限为2。",
+      knowledgePoint: "0/0 型极限",
       difficulty: "基础"
     }
   ],
@@ -156,66 +115,58 @@ window.DEMO_PAYLOAD = {
   studyPlan: [
     {
       step: 1,
-      title: "理解过拟合",
-      goal: "通过对比训练集和测试集误差，建立过拟合和欠拟合的直观理解",
-      resource: "课程资料 · 模型评估章节",
-      estimatedTime: "20分钟",
-      action: "阅读过拟合定义，观察训练误差与测试误差的差距"
+      title: "先分清点值与趋势",
+      goal: "理解极限不等于函数值，先建立直观图像",
+      resource: "讲义 · 函数极限定义",
+      estimatedTime: "12分钟",
+      action: "读讲义前两节，画出 x 趋近 x0 的箭头"
     },
     {
       step: 2,
-      title: "区分欠拟合",
-      goal: "了解模型过于简单导致训练和测试误差都高的情况",
-      resource: "AI 讲解 · 偏差-方差权衡",
+      title: "补左右极限",
+      goal: "会判断双侧极限是否存在",
+      resource: "知识树 · 左右极限",
       estimatedTime: "15分钟",
-      action: "对比过拟合和欠拟合的特征，理解偏差-方差权衡"
+      action: "对照导图，把左右极限相等作为判断清单"
     },
     {
       step: 3,
-      title: "学习正则化",
-      goal: "掌握L1/L2正则化和Dropout的原理与使用场景",
-      resource: "课程资料 · 正则化方法",
-      estimatedTime: "30分钟",
-      action: "理解正则化如何在损失函数中添加惩罚项来限制复杂度"
+      title: "做一个 0/0 型例题",
+      goal: "掌握因式分解消去无意义点的基本套路",
+      resource: "练习题 · 函数极限",
+      estimatedTime: "18分钟",
+      action: "完成 3 道选择题，选错后看错因"
     },
     {
       step: 4,
-      title: "完成巩固练习",
-      goal: "通过测验检验对过拟合和正则化的理解程度",
-      resource: "自适应测验",
-      estimatedTime: "20分钟",
-      action: "完成5道练习题，关注薄弱知识点"
-    },
-    {
-      step: 5,
-      title: "复盘薄弱点",
-      goal: "回顾错题和薄弱知识点，强化理解",
-      resource: "学习报告 · 错题回顾",
-      estimatedTime: "15分钟",
-      action: "回顾错题对应的知识点，必要时查阅课程资料加深理解"
+      title: "用错题更新路径",
+      goal: "根据错因决定是补定义、补代数化简还是补左右极限",
+      resource: "学习报告 · 薄弱点",
+      estimatedTime: "10分钟",
+      action: "查看学习报告，按推荐资源复习"
     }
   ],
 
   learningReport: {
-    total_attempts: 5,
-    correct_count: 4,
-    accuracy: 0.8,
-    weak_points: ["正则化", "过拟合检测"],
+    total_attempts: 3,
+    correct_count: 2,
+    accuracy: 0.67,
+    weak_points: ["函数极限定义", "左右极限", "0/0 型极限"],
     recommended_resources: [
-      { type: "mindmap", title: "过拟合与正则化知识结构图" },
-      { type: "quiz", title: "正则化专项练习" },
-      { type: "lecture_doc", title: "模型评估与选择讲义" }
+      { type: "lecture_doc", title: "函数极限定义讲义" },
+      { type: "mindmap", title: "函数极限知识结构图" },
+      { type: "quiz", title: "左右极限专项练习" }
     ],
     profile_updated: true
   },
 
   agentSteps: [
-    { title: "画像分析", description: "识别你的学习基础、目标和偏好", status: "completed" },
-    { title: "课程资料检索", description: "从人工智能导论课程资料中查找相关内容", status: "completed" },
-    { title: "可信答案校验", description: "检查回答是否有课程资料依据", status: "completed" },
-    { title: "学习资源生成", description: "生成知识结构、测验和学习路径", status: "completed" },
-    { title: "学习路径规划", description: "根据你的薄弱点规划学习顺序", status: "completed" }
+    { title: "Tutor Agent", description: "识别问题：函数极限定义、常见误区、基础薄弱", status: "completed" },
+    { title: "Retriever Agent", description: "检索《高数上.pdf》第一章函数与极限片段", status: "completed" },
+    { title: "Verifier Agent", description: "基础可信度校验：引用覆盖与风险等级", status: "completed" },
+    { title: "Practice Agent", description: "生成讲义、知识树、练习题、学习路径和 Markdown PPT", status: "completed" },
+    { title: "Profile Agent", description: "更新薄弱点：定义理解、左右极限、例题步骤", status: "completed" }
   ],
 
-  mermaidDiagram: "mindmap\n  root((过拟合与正则化))\n    过拟合\n      训练误差低测试误差高\n      模型复杂度过高\n    欠拟合\n      训练测试误差都高\n    正则化\n      L1 Lasso\n      L2 Ridge\n      Dropout\n      早停法"
+  mermaidDiagram: "mindmap\n  root((函数极限))\n    核心定义\n      x趋近x0\n      f(x)趋近A\n      看趋势不只看点值\n    左右极限\n      左极限存在\n      右极限存在\n      两者相等\n    常见方法\n      直接代入\n      因式分解\n      等价无穷小\n    常见误区\n      把函数值当极限\n      忽略左右极限\n      不说明适用条件"
 };

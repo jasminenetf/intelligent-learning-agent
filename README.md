@@ -131,25 +131,9 @@ docker compose up -d postgres redis minio
 
 ### 5. 演示数据初始化
 
-为了保证答辩和录屏时具备稳定的“有资料 RAG 问答”链路，项目提供了两类可重复初始化的演示数据。
+当前比赛候选版本默认收口到《高等数学上册》课程智能助教。轻量 Demo 后端启动后会内置函数极限、左右极限、无穷小、连续、导数、积分等高数上核心上下文，适合直接演示“提问 → 引用 → 资源 → 测验 → 画像 → 路径 → 报告”闭环。
 
-#### 5.1 人工智能导论演示课程
-
-```bash
-python scripts/seed_demo_data.py
-```
-
-该脚本会初始化：
-
-- 学生账号：`demo_student` / `demo_pass_12345`
-- 教师账号：`demo_teacher`
-- `人工智能导论 - 演示课程`
-- 课程知识片段与 Chroma 索引
-- 学习画像、错题记录、知识点掌握度、学习进度、收藏和行为日志
-
-适合快速验证多智能体、RAG、防幻觉、资源包、错题本和学习报告闭环。
-
-#### 5.2 高等数学上册真实教材导入
+#### 5.1 高等数学上册真实教材导入
 
 如果 PDF 有可复制文本层，可以直接导入：
 
@@ -239,6 +223,19 @@ python scripts/deep_qa_check.py
 - 资源下载文件可打开且包含教材依据、Verifier 和生成来源
 - 测验选错后的原地详细解析
 - 常见敏感信息扫描
+
+### Playwright 浏览器验收
+
+如需复跑前端 E2E：
+
+```powershell
+cd tests/e2e
+npm install
+npx playwright install chromium
+npx playwright test
+```
+
+E2E 默认访问 `http://127.0.0.1:5173` 和 `http://127.0.0.1:8010`，测试问题固定为函数极限，不再使用旧 AI 导论/过拟合主题。
 
 ### 5. 停止服务
 
@@ -344,7 +341,7 @@ bash scripts/stop_app.sh
 A: 检查后端是否启动、端口是否占用、`.env` 配置是否正确。
 
 **Q: 问答或资源生成返回错误？**  
-A: 检查模型 API Key 和网络连接，确保课程已上传资料并完成知识库构建。
+A: 先看设置页的 provider/model/fallback/Chroma/vector_count 状态。Spark 未配置或失败时，系统会标注失败原因并进入“本地演示兜底 Mock”，该模式只用于流程演示，不应被当作真实模型效果。
 
 **Q: 为什么 GitHub 上没有 API Key？**  
 A: 这是正常的。密钥保存在本机 `backend/.env` 中，不应提交到仓库。

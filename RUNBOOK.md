@@ -74,8 +74,15 @@ python scripts/verify_p0_smoke.py
 # 深度 QA：语法、smoke、问答资源包、下载、错题反馈、敏感信息
 python scripts/deep_qa_check.py
 
-# 初始化演示数据
-python scripts/seed_demo_data.py
+# 可选：导入真实《高数上.pdf》教材
+$env:GAOSHU_PDF_PATH='C:\Users\zhang\Desktop\高数上.pdf'
+python scripts/seed_gaoshu_pdf.py
+
+# 前端 E2E 浏览器验收
+cd tests/e2e
+npm install
+npx playwright install chromium
+npx playwright test
 
 # 可选：启动基础设施
 docker compose up -d postgres redis minio
@@ -110,10 +117,11 @@ project-root/
 | 测验题偏离问题 | 运行 `python scripts/deep_qa_check.py`，它会检查题目是否来自当前问题和教材上下文 |
 | 向量检索无结果 | 确认已上传教材并构建索引 |
 | 端口冲突 | 修改 docker-compose.yml 中的端口映射 |
+| E2E 提示缺少浏览器 | 进入 `tests/e2e` 后运行 `npx playwright install chromium` |
 
 ## 开发模式
 ```powershell
-# 正式后端开发热重载
+# 完整后端开发热重载（非答辩主入口）
 cd C:\Users\zhang\Desktop\智能学习\backend
 python -m uvicorn app.main:app --reload --port 8000
 

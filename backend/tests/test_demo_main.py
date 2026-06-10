@@ -26,13 +26,13 @@ def test_demo_backend_open_bootstrap_and_settings_status():
 def test_generate_mindmap_returns_chinese_mermaid_for_topic():
     response = client.post(
         "/api/app/generate",
-        json={"course_id": 1, "resource_type": "mindmap", "topic": "过拟合与正则化"},
+        json={"course_id": 1, "resource_type": "mindmap", "topic": "函数极限的定义"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
     assert data["type"] == "mindmap"
-    assert "过拟合与正则化" in data["title"]
+    assert "函数极限" in data["title"]
     assert data["mermaid"].startswith(("mindmap", "flowchart"))
     assert "核心定义" in data["mermaid"]
 
@@ -40,13 +40,13 @@ def test_generate_mindmap_returns_chinese_mermaid_for_topic():
 def test_generate_quiz_returns_valid_items_for_topic():
     response = client.post(
         "/api/app/generate",
-        json={"course_id": 1, "resource_type": "quiz", "topic": "过拟合与正则化"},
+        json={"course_id": 1, "resource_type": "quiz", "topic": "函数极限的定义"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
     assert data["type"] == "quiz"
-    assert "过拟合与正则化" in data["title"]
+    assert "函数极限" in data["title"]
     assert len(data["items"]) >= 3
     for item in data["items"]:
         assert item["question"]
@@ -57,7 +57,7 @@ def test_generate_quiz_returns_valid_items_for_topic():
 def test_resource_center_generation_and_download():
     response = client.post(
         "/api/resources/generate",
-        json={"course_id": 1, "topic": "决策树", "resource_types": ["mindmap", "quiz", "ppt"]},
+        json={"course_id": 1, "topic": "函数极限", "resource_types": ["mindmap", "quiz", "ppt"]},
     )
     assert response.status_code == 200
     data = response.json()
@@ -72,4 +72,4 @@ def test_resource_center_generation_and_download():
     resource_id = data["resources"][0]["resource_id"]
     download = client.get(f"/api/resources/download/{resource_id}")
     assert download.status_code == 200
-    assert "决策树" in download.text
+    assert "函数极限" in download.text

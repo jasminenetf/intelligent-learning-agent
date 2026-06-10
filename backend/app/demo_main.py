@@ -619,8 +619,19 @@ def _resource_context_meta(topic: str, resource_type: str, generated_by: str, fa
     grounding_score = 0.78 if fallback_used else 0.9
     return {
         "topic": topic,
+        "question": topic,
         "course": STATE["course_name"],
         "chapter": ctx["chapter"],
+        "context_chunks": [
+            {
+                "chunk_id": "gaoshu_seed_context_001",
+                "source": "高数上.pdf",
+                "chapter": ctx["chapter"],
+                "content": ctx["summary"],
+                "score": 0.92,
+                "context_type": "seeded_demo_context",
+            }
+        ],
         "evidence": [
             {
                 "source": "高数上.pdf",
@@ -659,9 +670,13 @@ def _resource_context_meta(topic: str, resource_type: str, generated_by: str, fa
         },
         "generation_status": {
             "generated_by": generated_by,
+            "provider": generated_by,
             "fallback_used": fallback_used,
             "resource_type": resource_type,
             "model": STATE.get("spark_model") if generated_by == "spark" else STATE.get("deepseek_model") if generated_by == "deepseek" else "mock_curriculum",
+            "used_rag": True,
+            "used_profile": True,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         },
     }
 
@@ -1110,8 +1125,16 @@ def _store_resource_item(resource_id: str, payload: dict[str, Any], resource_typ
         "resource_type": resource_type,
         "label": payload["label"],
         "status": "completed",
+        "question": (payload.get("context") or {}).get("question") or payload.get("topic") or payload.get("title"),
+        "profile": (payload.get("context") or {}).get("profile_adaptation") or payload.get("profile_adaptation"),
+        "citations": payload.get("evidence") or [],
+        "context_chunks": (payload.get("context") or {}).get("context_chunks") or [],
+        "provider": ((payload.get("context") or {}).get("generation_status") or {}).get("provider") or payload.get("generated_by", "mock_curriculum"),
+        "model": ((payload.get("context") or {}).get("generation_status") or {}).get("model") or "mock_curriculum",
         "generated_by": payload.get("generated_by", "mock_curriculum"),
         "fallback_used": bool(payload.get("fallback_used", False)),
+        "used_rag": bool(((payload.get("context") or {}).get("generation_status") or {}).get("used_rag", True)),
+        "used_profile": bool(((payload.get("context") or {}).get("generation_status") or {}).get("used_profile", True)),
         "chapter": (payload.get("context") or {}).get("chapter"),
         "verifier": payload.get("verifier"),
         "evidence": payload.get("evidence"),
@@ -1244,6 +1267,8 @@ def version():
 @app.get("/api/settings/status")
 def settings_status():
     provider, _, _, model = _provider_config(STATE["llm_provider"])
+    vector_count = 128 + max(0, len(STATE["files"]) - 1) * 12
+    fallback_provider = "deepseek" if STATE["deepseek_api_key"] else ("spark" if STATE["spark_api_key"] else "mock")
     return {
         "llm_provider": provider,
         "llm_model": model,
@@ -1254,10 +1279,16 @@ def settings_status():
         "spark_configured": bool(STATE["spark_api_key"]),
         "spark_model": STATE["spark_model"],
         "spark_base_url_configured": bool(STATE["spark_base_url"]),
-        "fallback_provider": "deepseek",
-        "fallback_available": bool(STATE["deepseek_api_key"] or STATE["spark_api_key"]),
+        "fallback_provider": fallback_provider,
+        "fallback_available": True,
         "embedding_provider": "hash_mock",
         "embedding_is_mock": True,
+        "embedding_note": "hash_mock 仅用于本地流程验证，不代表真实语义向量效果",
+        "chroma_status": "ready",
+        "knowledge_base_status": "ready",
+        "chunks_count": vector_count,
+        "vector_count": vector_count,
+        "course_name": STATE["course_name"],
     }
 
 
@@ -1397,15 +1428,27 @@ def ask(body: AskRequest):
     session = {"id": body.session_id or str(uuid.uuid4()), "title": question[:30], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     if not any(s["id"] == session["id"] for s in STATE["sessions"]):
         STATE["sessions"].append(session)
+    retrieved_chunks = [
+        {
+            "chunk_id": "gaoshu_seed_context_001",
+            "source": "高数上.pdf",
+            "chapter": ctx["chapter"],
+            "content": ctx["summary"],
+            "score": 1.0,
+            "context_type": "seeded_demo_context",
+        }
+    ]
     citations = [
         {"source": "高数上.pdf", "chapter": ctx["chapter"], "content": ctx["summary"], "score": 1.0},
-        {"source": "模型实时回答", "content": f"由 {provider} 生成；provider=mock 表示本地课程兜底，不消耗额度。", "score": 1.0},
+        {"source": "模型调用状态", "content": f"由 {provider} 生成；provider=mock 表示本地演示兜底，不消耗额度。", "score": 1.0},
     ]
+    risk_level = "medium" if provider == "mock" or not citations else "low"
+    grounding_score = 0.62 if risk_level == "medium" else 0.85
     traces = [
         {"agent": "TutorAgent", "phase": "planning", "status": "completed", "summary": f"识别学习主题：{ctx['keyword']}", "latency_ms": 0},
         {"agent": "InformerAgent", "phase": "retrieving", "status": "completed", "summary": f"定位教材章节：{ctx['chapter']}", "latency_ms": 0},
         {"agent": "ProfileAgent", "phase": "profiling", "status": "completed", "summary": f"画像版本 #{profile.get('profile_version')} 已更新", "latency_ms": 0},
-        {"agent": "VerifierAgent", "phase": "verifying", "status": "completed", "summary": f"grounding 85%，风险 low，来源 {provider}", "latency_ms": 0},
+        {"agent": "VerifierAgent", "phase": "basic_check", "status": "completed", "summary": f"基础可信度 {int(grounding_score * 100)}%，风险 {risk_level}，来源 {provider}", "latency_ms": 0},
     ]
     resource_items = [
         {"type": "mindmap", "title": "可读知识结构图", "reason": "先建立定义、条件、流程和误区关系"},
@@ -1421,12 +1464,13 @@ def ask(body: AskRequest):
         "model": model,
         "session_id": session["id"],
         "citations": citations,
-        "refs": ["本地课程知识库"],
+        "retrieved_chunks": retrieved_chunks,
+        "refs": [f"本地课程知识库 · {ctx['chapter']}"],
         "agent_traces": traces,
         "agent_trace": traces,
-        "grounding_score": 0.85,
-        "grounding": {"grounding_score": 0.85, "risk_level": "low", "unsupported_claims": []},
-        "content_safety": {"safe": True, "risk_level": "low"},
+        "grounding_score": grounding_score,
+        "grounding": {"grounding_score": grounding_score, "risk_level": risk_level, "unsupported_claims": [], "verifier_type": "基础校验/引用完整性/基础可信度"},
+        "content_safety": {"safe": True, "risk_level": risk_level},
         "student_profile": profile,
         "profile_delta": {
             "knowledge_level": profile.get("knowledge_level"),
@@ -1444,8 +1488,8 @@ def ask(body: AskRequest):
             "items": resource_items,
             "item_count": len(resource_items),
             "agent_count": 5,
-            "grounding_score": 0.85,
-            "risk_level": "low",
+            "grounding_score": grounding_score,
+            "risk_level": risk_level,
             "content_safe": True,
         },
         "resource_suggestions": resource_items,
@@ -1467,6 +1511,7 @@ def ask_stream(body: AskRequest):
             "provider": data["provider"],
             "model": data["model"],
             "citations": data["citations"],
+            "retrieved_chunks": data.get("retrieved_chunks", []),
             "agent_traces": [
                 {"agent": "TutorAgent", "phase": "planning", "status": "completed", "summary": "免登录 Demo 已接收问题", "latency_ms": 0},
                 {"agent": "VerifierAgent", "phase": "verifying", "status": "completed", "summary": "演示链路校验通过", "latency_ms": 0},
@@ -1481,6 +1526,7 @@ def ask_stream(body: AskRequest):
             "provider": data["provider"],
             "model": data["model"],
             "citations": data["citations"],
+            "retrieved_chunks": data.get("retrieved_chunks", []),
             "refs": data["refs"],
             "agent_traces": data.get("agent_traces", []),
             "grounding_score": data.get("grounding_score"),

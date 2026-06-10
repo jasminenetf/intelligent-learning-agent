@@ -84,11 +84,12 @@
           <select id="session-select" title="学习会话历史" onchange="onSessionSelect(this.value)"></select>
           <button type="button" class="btn btn-sm btn-outline" onclick="createNewSession()">+ 新会话</button>
           <button type="button" class="btn btn-sm btn-primary" onclick="navTo('assistant')">开始学习</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="_runOneClickDemo()">一键演示</button>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
         <div class="chat-input-area">
           <div class="chat-input-row">
-            <textarea id="chat-input" placeholder="输入你想学习的问题，例如：过拟合和正则化有什么关系？" rows="2"></textarea>
+            <textarea id="chat-input" placeholder="输入你想学习的问题，例如：我不懂函数极限，讲清定义、常见误区，并给一个例题" rows="2"></textarea>
             <button class="btn btn-primary" onclick="_sendQuestion()">发送</button>
           </div>
           <div class="chat-quick-btns">

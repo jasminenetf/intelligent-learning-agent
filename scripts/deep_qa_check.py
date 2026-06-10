@@ -119,7 +119,12 @@ def check_learning_loop() -> list[dict[str, Any]]:
     assert_true(not missing, f"ask resource package missing types: {missing}")
     assert_true((ask.get("student_profile") or {}).get("profile_version", 0) >= 1, "profile did not update after ask")
     assert_true(len(ask.get("agent_traces") or ask.get("agent_trace") or []) >= 4, "agent trace is too weak")
-    assert_true((ask.get("grounding") or {}).get("risk_level") == "low", "grounding risk should be low")
+    risk = (ask.get("grounding") or {}).get("risk_level")
+    provider = str(ask.get("provider") or "").lower()
+    if provider == "mock":
+        assert_true(risk in {"medium", "high"}, "mock answer must not be marked low risk")
+    else:
+        assert_true(risk in {"low", "medium"}, "online answer risk should be low/medium")
 
     generated: list[dict[str, Any]] = []
     for typ in RESOURCE_TYPES:
