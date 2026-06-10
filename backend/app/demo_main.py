@@ -1457,6 +1457,21 @@ def ask(body: AskRequest):
         {"type": "study_plan", "title": "动态学习路径", "reason": "根据画像、错题和当前章节安排下一步"},
         {"type": "ppt", "title": "Markdown 教学版 PPT", "reason": "用于复习或答辩演示的文字课件"},
     ]
+    resource_created_at = time.strftime("%Y-%m-%d %H:%M:%S")
+    for item in resource_items:
+        item.update({
+            "question": question,
+            "profile": profile,
+            "citations": citations,
+            "context_chunks": retrieved_chunks,
+            "provider": provider,
+            "model": model,
+            "generated_by": provider,
+            "fallback_used": provider == "mock",
+            "used_rag": bool(retrieved_chunks),
+            "used_profile": True,
+            "created_at": resource_created_at,
+        })
     payload = {
         "ok": True,
         "answer": answer,

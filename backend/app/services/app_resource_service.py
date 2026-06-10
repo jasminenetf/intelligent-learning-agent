@@ -56,6 +56,9 @@ def generate_workspace_resource(*, body: Any, user: User, session: Session) -> d
             "metadata": _resource_metadata(
                 fallback=plan.get("provider") == "rule",
                 used_profile=profile is not None,
+                used_rag=False,
+                provider=plan.get("provider") or "rule",
+                model=plan.get("model") or "rule",
             ),
         }
 
@@ -86,16 +89,28 @@ def generate_workspace_resource(*, body: Any, user: User, session: Session) -> d
         "metadata": _resource_metadata(
             fallback=bool(resource.fallback_used) if resource.fallback_used else False,
             used_profile=profile is not None,
+            used_rag=bool(resource.used_rag),
+            provider=pack.provider,
+            model=pack.model,
         ),
     }
 
 
-def _resource_metadata(*, fallback: bool, used_profile: bool) -> dict[str, Any]:
+def _resource_metadata(
+    *,
+    fallback: bool,
+    used_profile: bool,
+    used_rag: bool,
+    provider: str | None,
+    model: str | None,
+) -> dict[str, Any]:
+    current_provider = provider or ("mock" if fallback else "unknown")
+    current_model = model or current_provider
     return {
-        "generated_by": "deepseek",
+        "generated_by": current_provider if not fallback else "fallback_template",
         "fallback": fallback,
         "used_profile": used_profile,
-        "used_rag": True,
-        "model": "deepseek-chat",
+        "used_rag": used_rag,
+        "model": current_model,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }

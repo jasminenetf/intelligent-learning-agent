@@ -113,35 +113,48 @@ def _collect_weak_points(attempts: list[QuizAttempt]) -> list[str]:
 
 def _recommend_resources(weak_points: list[str]) -> list[dict[str, str]]:
     resource_map = {
-        "正则化": [
-            {"type": "mindmap", "title": "正则化知识结构图"},
-            {"type": "quiz", "title": "正则化专项练习"},
+        "函数极限": [
+            {"type": "lecture_doc", "title": "函数极限定义讲义"},
+            {"type": "mindmap", "title": "函数极限知识结构图"},
         ],
-        "过拟合": [
-            {"type": "lecture_doc", "title": "过拟合详解讲义"},
-            {"type": "quiz", "title": "过拟合专项练习"},
+        "左右极限": [
+            {"type": "mindmap", "title": "左右极限判断清单"},
+            {"type": "quiz", "title": "左右极限专项练习"},
         ],
-        "欠拟合": [
-            {"type": "study_plan", "title": "欠拟合学习路径"},
-            {"type": "quiz", "title": "欠拟合专项练习"},
+        "无穷小": [
+            {"type": "lecture_doc", "title": "无穷小与等价无穷小讲义"},
+            {"type": "quiz", "title": "无穷小计算练习"},
         ],
-        "过拟合与正则化": [
-            {"type": "mindmap", "title": "过拟合与正则化知识结构图"},
-            {"type": "quiz", "title": "巩固练习"},
+        "连续": [
+            {"type": "mindmap", "title": "连续性条件知识结构图"},
+            {"type": "quiz", "title": "连续性判断练习"},
+        ],
+        "导数": [
+            {"type": "lecture_doc", "title": "导数定义与几何意义讲义"},
+            {"type": "quiz", "title": "导数基础专项练习"},
+        ],
+        "积分": [
+            {"type": "lecture_doc", "title": "积分概念与基本方法讲义"},
+            {"type": "study_plan", "title": "积分方法学习路径"},
         ],
     }
     recommended: list[dict[str, str]] = []
     seen: set[str] = set()
     for weak_point in weak_points:
-        for resource in resource_map.get(weak_point, resource_map.get("过拟合与正则化", [])):
+        matched = []
+        for key, resources in resource_map.items():
+            if key in weak_point:
+                matched = resources
+                break
+        for resource in matched or resource_map["函数极限"]:
             if resource["title"] not in seen:
                 recommended.append(resource)
                 seen.add(resource["title"])
     if recommended:
         return recommended
     return [
-        {"type": "mindmap", "title": "知识结构图"},
-        {"type": "study_plan", "title": "个性化学习路径"},
+        {"type": "mindmap", "title": "函数极限知识结构图"},
+        {"type": "study_plan", "title": "高等数学上册个性化学习路径"},
     ]
 
 

@@ -141,6 +141,41 @@
 - 本轮未重复消耗 Spark 额度；真实 Spark 连通性仍以此前单独测试记录为依据，提交文件中不保存 API Key。
 - 本轮结论：当前候选状态满足“初赛可提交候选成品 + 人工最终验收”标准；本轮只新增完成度审计记录。
 
+## 2026-06-10 第六次需求级收口审计
+
+- 当前分支：`feat/product-workbench-core-pipeline`。
+- 恢复时未提交修改：无。
+- 最近提交：
+  - `25065cf chore: harden competition demo candidate`
+  - `b5d37d3 chore: record github upload verification`
+  - `1d3fb6d chore: harden competition demo candidate`
+  - `2d02ace chore: harden competition demo candidate`
+  - `d673f00 chore: harden competition demo candidate`
+  - `1e1d683 Add official A3 defense deck`
+  - `c448132 Add static QA workflow and update delivery docs`
+  - `dd191d0 Strengthen gaoshu demo loop and deep QA`
+  - `f310ddf Fit mindmap to preview viewport`
+  - `6182214 Explain quiz mistakes inline and expand lectures`
+- 关键提交检查：
+  - `18ede88 Fix learning artifact generation quality`：存在。
+  - `09d5884 Generate teaching-focused PPT markdown decks`：存在。
+- 本轮发现并修复：
+  - `backend/app/demo_main.py`：`ask` 自动资源包的 5 类资源建议补齐 question/profile/citations/context_chunks/provider/model/fallback_used/used_rag/used_profile/created_at，满足资源卡片元信息一致性。
+  - `backend/app/services/app_resource_service.py`：资源 metadata 不再硬编码 deepseek/deepseek-chat/used_rag=true，改用实际 provider/model/fallback/used_rag。
+  - `backend/app/services/learning_report_service.py`：学习报告推荐从旧 AI 主题改为函数极限、左右极限、无穷小、连续、导数、积分等高数上主题。
+- 本轮验证：
+  - 运行态 ask 断言：通过。answer/citations/retrieved_chunks/student_profile/profile_delta/agent_traces/grounding/resource_package 均存在；5 类资源均带完整元信息；mock 风险等级为 medium。
+  - 旧主题/硬编码扫描：通过。旧 AI 主题仅保留在文档“已不再使用旧主题”的说明中；资源服务不再硬编码 deepseek-chat。
+  - `python -m py_compile backend/app/demo_main.py scripts/verify_p0_smoke.py scripts/deep_qa_check.py backend/app/services/app_resource_service.py backend/app/services/learning_report_service.py`：通过。
+  - `node --check frontend-demo/app.js`：通过。
+  - `python -m pytest -q backend/tests`：通过，4 passed，1 个 StarletteDeprecationWarning。
+  - `python scripts/verify_p0_smoke.py`：通过，`=== ALL CHECKS PASSED ===`。
+  - `python scripts/deep_qa_check.py`：通过，`=== DEEP QA PASSED ===`。
+  - `npx playwright test`：通过，9 passed。
+  - 1366×768 浏览器验收：通过。无控制台错误、无横向溢出；一键演示后答案/引用/Agent 面板可见；思维导图可见且无横向溢出。
+  - 候选提交文件安全扫描：通过，未发现用户 Spark Key、token、refresh token、`.env` 或日志密钥进入提交候选。
+- 本轮结论：修复了需求级审计发现的 S1/S2 残余问题，当前仍满足初赛提交候选标准。
+
 ## 2026-06-10 第三次恢复现场
 
 - 当前分支：`feat/product-workbench-core-pipeline`。
