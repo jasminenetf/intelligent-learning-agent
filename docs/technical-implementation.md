@@ -338,7 +338,7 @@ python scripts/verify_p0_smoke.py
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
 前端可直接打开 `frontend-demo/index.html`，或使用本地静态服务运行。

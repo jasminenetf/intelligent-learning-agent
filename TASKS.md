@@ -1,4 +1,4 @@
-# 任务清单（更新至 2026-06-08）
+# 任务清单（更新至 2026-06-10）
 
 ## ✅ 已完成
 - 项目控制层 (AGENTS/PROJECT_BRIEF/TASKS/DECISIONS/RUNBOOK)
@@ -19,10 +19,16 @@
 - 静态前端 Demo 工作台 (`frontend-demo/`)
 - 学习会话、错题本、掌握度、学习报告、资源中心
 - P0 smoke 验证脚本 (`scripts/verify_p0_smoke.py`)
+- 深度 QA 验证脚本 (`scripts/deep_qa_check.py`)
 - Playwright 前端 E2E 冒烟测试
 - 一键启动脚本默认启动免登录 Demo 后端
 - 所有功能入口本地 Demo 模式无登录/权限限制
 - API 设置页支持打开后直接填写 Spark/DeepSeek Key
+- 《高数上》提问后自动生成导图、练习、讲义、学习路径、Markdown PPT
+- 思维导图默认可读知识树，保留 Mermaid 备份和全屏查看
+- 测验答错后原地详细讲解，并写入错题本和学习画像
+- 学习画像展示 6 个维度、证据来源和置信度
+- 资源下载统一输出稳定可打开的 Markdown 文本
 - OSS_LICENSES.md
 
 ## 🔄 P1 进行中
@@ -31,6 +37,7 @@
 - 控制文件与当前实现持续对齐
 - Demo 数据与演示流程固化
 - 一键启动后的真实 API Key 联调
+- 答辩 PPT 正式文件制作
 
 ## ⬜ 后续 P2/P3
 - 正式注册/登录、角色权限与 Admin 认证加固
@@ -46,7 +53,7 @@
 - [ ] 答辩 PPT
 - [x] 演示脚本/流程初稿
 - [ ] Spark 连接实测
-- [ ] P0 smoke 在答辩机器上通过
+- [ ] P0 smoke + deep QA 在答辩机器上通过
 
 ## 🔧 深度检验修复长任务清单（2026-06-08）
 
@@ -64,6 +71,7 @@
 - [x] 补齐后端 pytest，避免 `no tests ran`。
 - [ ] 补齐 Playwright E2E 依赖安装/CI 说明，避免 `playwright` 命令不存在。
 - [ ] 清理 LangGraph `RunnableConfig` 类型警告。
-- [ ] 优化学习路径入口，在侧边栏或助手预览区明确展示。
+- [x] 优化学习路径入口，在侧边栏或助手预览区明确展示。
 - [x] 规范 `.env.example`，去重 Spark 字段并默认关闭 Admin。
-- [ ] demo 下载格式按资源类型输出，PPT 下载升级为 `.pptx`。
+- [x] demo 下载格式按资源类型输出为 Markdown 文本，PPT 改为 Markdown 教学版。
+- [ ] `.pptx` 生成作为 P2 可选增强，不进入答辩稳定主链路。

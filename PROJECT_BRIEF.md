@@ -4,12 +4,13 @@
 面向高校的个性化学习资源生成与辅导系统，多智能体架构 + Agentic RAG。
 答辩版以科大讯飞星火大模型为主推理引擎，同时保留 DeepSeek / Mock 作为开发与演示 fallback，确保本地 Demo 可运行。
 
-## 当前实现状态（2026-06-08 对齐）
+## 当前实现状态（2026-06-10 对齐）
 - 当前前端为 `frontend-demo/` 静态学习工作台，不再使用 LobeChat 作为答辩 Demo 主界面。
-- 当前后端为 FastAPI，入口 `backend/app/main.py`，聚合接口集中在 `/api/app/*`。
+- 当前答辩后端为 FastAPI 轻量 Demo 入口 `backend/app/demo_main.py`，聚合接口集中在 `/api/app/*`；完整后端 `backend/app/main.py` 保留为开发入口。
 - 当前多智能体链路由 LangGraph 实现，核心文件 `backend/app/services/agent_graph.py`。
 - 当前向量库为 ChromaDB 本地持久化目录 `data/chroma/`。
-- 当前 PPT 由 `python-pptx` 在后端生成并通过下载接口提供，不依赖 Presenton 容器。
+- 当前答辩 Demo 聚焦《高数上》真实学习辅助，提问后自动生成思维导图、练习题、学习讲义、学习路径和 Markdown 教学版 PPT。
+- 当前 PPT 交付优先使用稳定可打开的 Markdown 教学稿，包含讲稿、板书、例题、自测和错因提醒；`.pptx` 作为后续可选增强，不作为当前答辩稳定链路。
 - 当前 `docker-compose.yml` 主要编排 PostgreSQL / Redis / MinIO 基础设施；后端和前端推荐本地脚本启动。
 - 当前答辩 Demo 支持免登录体验；正式注册/登录、角色权限作为 P1/P2 安全加固项继续跟进。
 
@@ -19,9 +20,9 @@
 1. 对话式问答（Tutor Agent 入口）
 2. 课程资料上传 → 自动构建向量知识库（ChromaDB）
 3. Agentic RAG 防幻觉回答（Informer + Verifier）
-4. 思维导图生成（Mermaid.js）
+4. 思维导图生成（默认可读知识树 + Mermaid 备份）
 5. 学生画像构建（对话隐式提取，6维）
-6. PPT 生成（当前使用 python-pptx；Presenton 作为后续可选集成）
+6. Markdown 教学版 PPT 生成（`.pptx` / Presenton 作为后续可选集成）
 7. 答辩 Demo 免登录可用；正式用户注册/登录、角色管理进入安全加固项
 
 ### 明确不做（后期扩展）
@@ -40,7 +41,7 @@
 | 向量库 | ChromaDB | 轻量、易部署 |
 | 关系库 | PostgreSQL / SQLite | 用户、课程、记录 |
 | 图库 | Neo4j（可选） | 知识图谱、画像关系 |
-| 多模态 | Mermaid.js + python-pptx | 思维导图 + PPT 下载闭环 |
+| 多模态 | 可读知识树 + Mermaid.js + Markdown PPT | 思维导图 + 教学课件下载闭环 |
 | 部署 | 本地脚本 + Docker Compose 基础设施 | 答辩本地稳定运行，数据库/缓存/对象存储可容器化 |
 
 ## 核心约束
@@ -61,6 +62,7 @@
 
 ## 验收标准
 - 学生上传教材 → 提问 → 得到带引用的答案
-- 思维导图自动生成并在前端渲染
-- PPT 可从大纲生成并提供下载
-- 学生画像随对话动态更新
+- 提问后自动生成导图、练习题、讲义、学习路径和 Markdown PPT
+- 思维导图默认以可读知识树渲染，并保留 Mermaid 备份
+- 学生画像随对话和答题动态更新，至少展示知识基础、学习目标、认知风格、薄弱点、资源偏好、情绪/信心
+- 选错题后原地显示详细讲解，再写入错题本和学习路径调整依据

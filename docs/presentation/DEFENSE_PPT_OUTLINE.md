@@ -1,215 +1,185 @@
 # 答辩 PPT 大纲
 
-> 建议 15 页，每页含核心讲解点、配图建议、演讲提示
+建议 14 页，围绕评分项组织：创新价值与实用性 35%，功能实现与技术要求 45%，文档 10%，演示/PPT 10%。
 
----
+## 1. 封面
 
-## P1 · 封面
+题目：基于大模型的《高等数学上册》个性化学习资源多智能体系统
 
-**内容**: 高等教育个性化学习资源多智能体系统 / 团队名称 / 日期
+副标题：面向基础薄弱学生的可信问答、资源生成与学习闭环
 
-**演讲**: "各位评委好，我们的项目是高等教育个性化学习资源多智能体系统。它以科大讯飞 Spark 为主推理引擎，结合多智能体 RAG，为大学生提供个性化学习资源自动生成服务。"
+## 2. 赛题理解
 
----
+核心要求：
 
-## P2 · 赛题背景与痛点
+- 对话式学习画像，不少于 6 维。
+- 多智能体协同生成至少 5 类资源。
+- 个性化学习路径和资源推送。
+- 防幻觉、内容安全、进度反馈。
+- 可完整运行，有文档和演示视频。
 
-**核心点**:
-- 高校学生基础差异大，同一课堂难兼顾所有学生
-- 教师手动准备个性化资源（思维导图/讲义/测验/PPT）耗时巨大
-- 学生不知道自己的知识短板，缺乏个性化学习路径
-- 传统静态课件无法动态反映学生画像变化
+## 3. 用户痛点
 
-**建议配图**: 痛点对比图（传统 vs 智能）
+- 学生听完课后不知道自己哪里不会。
+- 教材内容长，查找知识点成本高。
+- 做错题后只记答案，不知道错因。
+- 学习资源分散，讲义、导图、练习和路径不能联动。
 
-**演讲**: "当前高等教育面临四个核心痛点：学生差异大、资源准备难、知识盲区不清晰、课件无法动态适应。"
+## 4. 项目定位
 
----
+当前版本聚焦一门课做深：
 
-## P3 · 项目目标
-
-**核心点**:
-1. 上传课程资料 → 自动构建知识库
-2. 自然语言交互 → 提取 6 维学生画像
-3. OCR+RAG 检索 → Spark/fallback 生成多类个性化资源
-4. 画像驱动学习路径规划
-5. PPTX 一键下载
-
-**建议配图**: 系统功能一览图
-
----
-
-## P4 · 总体架构
-
-**架构分层**:
-```
-前端 Demo (HTML+CSS+JS)
-  ↓ CORS + 聚合 API
-FastAPI 后端 (25 paths / 30 routes)
-  ├── Auth (当前 Demo 免登录，正式认证后续加固)
-  ├── Profile API (6维画像)
-  ├── OCR API (OCR→RAG)
-  ├── RAG API (ChromaDB 检索)
-  ├── Resource API (多类生成)
-  ├── OpenAI-compatible API (/v1/models, /v1/chat)
-  └── Admin (后续加固)
-      ↓
-数据层: SQLite + ChromaDB
-AI层: Spark 主引擎 + DeepSeek/Mock fallback + sentence-transformers/hash_mock
+```text
+《高等数学上册》课程智能助教
 ```
 
-**建议配图**: Mermaid 架构图
+主链路：
 
----
-
-## P5 · 核心技术路线
-
-**数据流**: 教材/PDF → PyMuPDF 解析 → 文本清洗 → chunker 切块 → 向量化 → ChromaDB 入库 → RAG 检索 → Spark/fallback 生成 → 资源输出
-
-**关键指标**:
-- 25 API 端点，30 路由方法
-- 课程、画像、会话、资源等数据表
-- 多类资源支持 Spark/fallback 生成
-
----
-
-## P6 · 多智能体协作设计
-
-**Agent 链路**:
-```
-User Query → supervisor (协调)
-  ├── profile_agent (画像更新)
-  ├── rag_agent (课程检索)
-  ├── resource_agent (资源生成)
-  └── verifier (防幻觉校验)
-     → answer + citations + agent_trace
+```text
+提问 -> 教材检索 -> 可信回答 -> 自动生成资源 -> 做题反馈 -> 错题复盘 -> 画像更新 -> 路径调整
 ```
 
-**核心机制**: agent_trace 透明展示每一步调用，citations 标注引用来源
+## 5. 总体架构
 
-**建议配图**: Agent 流程图
+```text
+frontend-demo 静态工作台
+  -> FastAPI Demo API 8010
+  -> Tutor / Informer / Profile / Generator / Verifier
+  -> 高数上课程知识库
+  -> Spark 主引擎 + Mock fallback
+  -> 资源中心 / 错题本 / 画像 / 学习报告
+```
 
----
+说明：
 
-## P7 · 学生画像设计（6维）
+- 答辩版优先保证一键启动和免登录体验。
+- 正式鉴权、对象存储、复杂异步任务作为后续工程增强。
 
-| 维度 | 字段 | 示例 |
-|------|------|------|
-| 知识水平 | knowledge_level | beginner |
-| 认知风格 | cognitive_style | conceptual |
-| 学习节奏 | pace_preference | slow |
-| 知识薄弱点 | weak_points | ["导数","极限"] |
-| 资源偏好 | resource_preference | ["mindmap","quiz"] |
-| 学习目标 | learning_goal | 考研备考 |
+## 6. 多智能体协作
 
-**提取方式**: 自然语言 → Spark/fallback LLM + 正则规则 fallback
+Agent 职责：
 
----
+| Agent | 职责 |
+|---|---|
+| Tutor Agent | 解析学生问题，组织回答 |
+| Informer Agent | 定位教材章节和引用依据 |
+| Profile Agent | 从对话和测验更新画像 |
+| Generator Agent | 生成讲义、导图、练习、路径、PPT |
+| Verifier Agent | 检查 grounding、风险和内容安全 |
 
-## P8 · RAG 防幻觉机制
+前端展示：
 
-**防幻觉策略**:
-1. 所有回答基于 ChromaDB 检索的课程资料
-2. 每句话标注引用来源（chunk_id、source、page_number）
-3. 无相关资料时明确告知学生"当前知识库缺少此内容"
-4. OCR 来源 chunk 以 "ocr:" 前缀标记，区分来源可信度
+- Agent 轨迹
+- 运行状态
+- 引用覆盖率
+- fallback 状态
 
-**建议配图**: RAG 问答截图（含引用）
+## 7. 六维学习画像
 
----
+画像维度：
 
-## P9 · 多类资源生成
+1. 知识基础
+2. 学习目标
+3. 认知风格
+4. 薄弱点
+5. 资源偏好
+6. 情绪/信心
 
-| 资源 | 输出格式 | 生成方式 | rendered示例 |
-|------|---------|---------|-------------|
-| mindmap | Mermaid | Spark/fallback→JSON→Mermaid | 思维导图 |
-| lecture_doc | Markdown | Spark/fallback→JSON→MD | 课程讲义 |
-| quiz | JSON | Spark/fallback→JSON→卡片 | 选择题+解析 |
-| ppt | PPTX | Spark/fallback→JSON→python-pptx | 课件 |
-| study_plan | JSON | Spark/fallback→JSON→步骤卡片 | 学习路径 |
+增强字段：
 
-**关键指标**: generated_by=spark/deepseek/mock, fallback_used 标识是否兜底
+- 证据来源
+- 置信度
+- 历史版本
+- 变更日志
 
----
+## 8. RAG 与防幻觉
 
-## P10 · 学习路径规划
+当前可信链路：
 
-**生成流程**: 学生画像 + course_id + topic → RAG 检索 → Spark/fallback → JSON → 步骤卡片
+- 回答绑定《高数上.pdf》课程章节。
+- 每次生成资源带 `evidence`。
+- 下载文件保留教材定位、生成来源、Verifier。
+- 右侧显示 grounding、风险等级、内容安全。
+- 真实模型失败时显示 fallback 原因，不伪装成真实调用。
 
-**输出**: steps(按学习顺序,预计时间,推荐资源类型,练习建议) + recommended_topics + next_action
+## 9. 五类自动资源
 
-**个性化**: 薄弱点多安排练习，偏好可视化多安排 mindmap
+提问后自动生成：
 
----
+| 类型 | 输出 |
+|---|---|
+| 思维导图 | 可折叠知识树 + Mermaid 备份 |
+| 练习题 | 同主题选择题 + 解析 |
+| 学习讲义 | 面向不会学生的 Markdown 讲义 |
+| 学习路径 | 原因、资源、时间、练习、检验标准 |
+| PPT | Markdown 教学版 PPT，含讲稿和板书 |
 
-## P11 · 前端 Demo 展示
+## 10. 错题与学习效果闭环
 
-**演示流程**:
-1. 进入免登录 Demo
-2. 检查系统状态 → 显示 Spark/fallback 和知识库状态
-3. 提取画像 → 6 维字段
-4. RAG 问答 → 回答+引用
-5. 生成 mindmap → Mermaid 渲染
-6. 生成 quiz → 题目卡片
-7. 生成 ppt → 下载按钮
-8. 生成 study_plan → 学习路径
+演示点：
 
-**建议配图**: 前端截图 4-6 张
+- 答错后原地解释，不直接跳错题本。
+- 后端写入错题本。
+- 更新掌握度。
+- 回流画像。
+- 下一轮路径根据错因变化。
 
----
+## 11. 前端体验设计
 
-## P12 · 系统创新点
+当前体验优化：
 
-1. **多智能体协同**: supervisor 调度 + profile/rag/resource/verifier
-2. **画像驱动生成**: 6 维画像个性化多类资源内容
-3. **Agentic RAG 防幻觉**: 检索+验证+引用闭环
-4. **OCR→RAG 链路**: 扫描版教材也可检索
-5. **OpenAI 兼容**: /v1/models + /v1/chat 可直接对接 LobeChat
+- 免登录可用。
+- 提问后自动生成资源。
+- 导图默认可读树，支持全屏。
+- Markdown PPT 稳定可打开。
+- 资源中心统一下载。
+- 右侧固定展示课程依据、Agent、画像、资源包。
 
----
+## 12. 工程与验证
 
-## P13 · 开源生态与协议
+已固化检查：
 
-**技术栈**:
-- FastAPI / SQLModel / SQLite — 后端
-- ChromaDB — 向量存储
-- LangGraph — 多 Agent 编排
-- Spark API — 主 LLM
-- DeepSeek API / Mock — fallback
-- sentence-transformers / hash_mock — Embedding
-- PyMuPDF / python-pptx — 文档处理
-- SQLAdmin — 管理后台
-- Mermaid — 思维导图渲染
-- LobeChat — 可选前端
+```powershell
+python -m py_compile backend/app/demo_main.py
+node --check frontend-demo/app.js
+python scripts/verify_p0_smoke.py
+python scripts/deep_qa_check.py
+```
 
-**协议**: 各组件均为 MIT/Apache 2.0 开源协议，OSS_LICENSES.md 已记录
+`deep_qa_check.py` 覆盖：
 
----
+- 问答后 5 类资源建议
+- 5 类资源生成
+- 下载文件
+- 错题反馈
+- Verifier
+- 敏感信息扫描
 
-## P14 · 测试与演示结果
+## 13. 对评分项的对应
 
-| 指标 | 值 |
-|------|-----|
-| API 端点 | 25 paths / 30 routes |
-| LLM | Spark 主引擎，DeepSeek/Mock fallback |
-| Embedding | sentence-transformers / hash_mock 可切换 |
-| 多类资源 | generated_by 和 fallback_used 可追踪 |
-| 前端 | 免登录/画像/问答/资源/下载 全部通过 |
-| OCR | PyMuPDF 可用，Tesseract 待安装 |
+| 评分项 | 对应实现 |
+|---|---|
+| 创新价值与实用性 35% | 高数学习闭环、错因驱动路径、画像随学随新 |
+| 功能实现与技术 45% | 多 Agent、RAG、防幻觉、5 类资源、下载、报告 |
+| 文档 10% | README、RUNBOOK、演示脚本、检查脚本、开源说明 |
+| 演示/PPT 10% | 7 分钟演示脚本、一键启动、稳定 fallback |
 
----
+## 14. 后续方向
 
-## P15 · 总结与展望
+短期：
 
-**已完成**:
-- 完整后端 + 前端 Demo 闭环
-- Spark 主引擎 + fallback + Embedding
-- 画像→资源→路径 个性化链路
-- OCR→RAG→检索 知识库闭环
+- 单次真实 Spark 联调，截图保留。
+- 补录 7 分钟演示视频。
+- 继续打磨学习报告和评分图表。
 
-**待完善**:
-- Tesseract OCR 安装（扫描版教材）
-- 自动测试
-- 生产环境安全加固
+中期：
 
-**扩展方向**: 语音交互、学习效果评估、视频/图解生成
+- 使用真实 OCR/RAG 片段替换更多本地课程模板。
+- 异步生成任务和进度条。
+- 更完整的课程资源库。
+
+长期：
+
+- 视频分镜生成。
+- 教师端班级分析。
+- 多课程扩展。

@@ -13,7 +13,7 @@ graph TB
         LC[LobeChat<br/>可选兼容]
     end
 
-    subgraph API["FastAPI 后端 :8000"]
+    subgraph API["FastAPI Demo 后端 :8010"]
         AUTH[Auth API<br/>Demo 免登录<br/>正式认证后续加固]
         PROF[Profile API<br/>6维画像]
         OCR[OCR API<br/>OCR→RAG]
@@ -34,7 +34,7 @@ graph TB
         DS[DeepSeek API<br/>fallback]
         ST[sentence-transformers/hash_mock<br/>Embedding]
         MU[PyMuPDF<br/>文档解析]
-        PP[python-pptx<br/>PPT生成]
+        PP[Markdown PPT<br/>教学课件生成]
     end
 
     FE --> AUTH
@@ -130,7 +130,7 @@ flowchart TD
     RENDER --> MINDMAP[mindmap → Mermaid]
     RENDER --> LECTURE[lecture_doc → Markdown]
     RENDER --> QUIZ[quiz → 题目卡片]
-    RENDER --> PPT_OUT[ppt → PPTX bytes]
+    RENDER --> PPT_OUT[ppt → Markdown 教学稿]
     RENDER --> PLAN[study_plan → 步骤卡片]
     MINDMAP --> META[标记 generated_by=spark/deepseek<br/>fallback_used=false]
     LECTURE --> META

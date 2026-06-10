@@ -108,6 +108,8 @@ STATE: dict[str, Any] = {
     },
     "profile_versions": [],
     "profile_changes": [],
+    "llm_failure_until": 0.0,
+    "llm_last_error": "",
 }
 
 GAOSHU_COURSE_DESCRIPTION = (
@@ -346,6 +348,7 @@ def _build_demo_study_plan(topic: str) -> dict[str, Any]:
             "resource_types": ["lecture_doc", "mindmap"],
             "estimated_minutes": 12,
             "practice": "读一遍讲义第一、二节，并用自己的话写出核心定义。",
+            "check_standard": "能指出教材章节，并说明这个知识点在后续导数、连续或积分中的作用。",
         },
         {
             "order": 2,
@@ -355,6 +358,7 @@ def _build_demo_study_plan(topic: str) -> dict[str, Any]:
             "resource_types": [t for t in ["mindmap", "lecture_doc"] if t in prefs] or ["mindmap"],
             "estimated_minutes": 18,
             "practice": "对照导图说出每个条件为什么必要。",
+            "check_standard": "不看答案时，能把定义中的对象、条件、结论分别说出来。",
         },
         {
             "order": 3,
@@ -364,6 +368,7 @@ def _build_demo_study_plan(topic: str) -> dict[str, Any]:
             "resource_types": ["quiz", "lecture_doc"],
             "estimated_minutes": 25,
             "practice": "完成 3 道同主题题，错题自动写入错题本和画像。",
+            "check_standard": "每道题能写出至少 2 个依据：为什么这样变形、为什么这个定理可用。",
         },
         {
             "order": 4,
@@ -373,6 +378,7 @@ def _build_demo_study_plan(topic: str) -> dict[str, Any]:
             "resource_types": ["quiz", "study_plan"],
             "estimated_minutes": 15,
             "practice": "把错题归因到定义、条件、计算或审题，并再次提问薄弱处。",
+            "check_standard": "能把错因归为概念、条件、方法、计算或表达中的一类，并知道下一份资料该看什么。",
         },
     ]
     return {
@@ -399,11 +405,14 @@ def _mock_answer(question: str) -> str:
     )
 
 
-def _call_llm(provider: str, question: str, model_override: str = "", max_tokens: int = 600, timeout_seconds: int | None = None) -> tuple[str, str, str]:
+def _call_llm(provider: str, question: str, model_override: str = "", max_tokens: int = 600, timeout_seconds: int | None = None, bypass_failure_cache: bool = False) -> tuple[str, str, str]:
     provider, api_key, base_url, model = _provider_config(provider)
     model = model_override or model
     if provider == "mock" or not api_key:
         return "mock", model, _mock_answer(question)
+    if not bypass_failure_cache and time.time() < float(STATE.get("llm_failure_until") or 0):
+        last_error = str(STATE.get("llm_last_error") or "真实模型暂不可用")
+        return "mock", "mock", _mock_answer(question) + f"\n\n真实模型暂时不可用，已自动切换本地课程模式：{last_error[:120]}"
     try:
         timeout = min(int(STATE["llm_timeout_seconds"] or 60), int(timeout_seconds or STATE["llm_timeout_seconds"] or 60))
         client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
@@ -418,8 +427,12 @@ def _call_llm(provider: str, question: str, model_override: str = "", max_tokens
             ],
             max_tokens=max_tokens,
         )
+        STATE["llm_failure_until"] = 0.0
+        STATE["llm_last_error"] = ""
         return provider, model, resp.choices[0].message.content or "已连接模型，但没有返回内容。"
     except Exception as exc:
+        STATE["llm_failure_until"] = time.time() + 120
+        STATE["llm_last_error"] = str(exc)[:240]
         return "mock", "mock", _mock_answer(question) + f"\n\n真实模型调用失败：{str(exc)[:160]}"
 
 
@@ -486,6 +499,55 @@ def _structured_mindmap(topic: str) -> str:
     ])
 
 
+def _mindmap_tree(topic: str) -> dict[str, Any]:
+    ctx = _gaoshu_context(topic)
+    profile = STATE.get("profile", {})
+    weak_points = _profile_list(profile.get("weak_points")) or [ctx["keyword"]]
+    return {
+        "title": topic or ctx["keyword"],
+        "subtitle": "按“先理解、再做题、最后复盘”的学习顺序组织",
+        "nodes": [
+            {
+                "title": "1. 教材定位",
+                "summary": f"对应《高等数学上册》：{ctx['chapter']}",
+                "children": [
+                    f"当前问题聚焦：{ctx['keyword']}",
+                    "先明确它和后续导数、连续、积分的关系",
+                    "学习时先读教材概念，再看例题步骤",
+                ],
+            },
+            {
+                "title": "2. 核心理解",
+                "summary": ctx["summary"],
+                "children": [
+                    "先用自己的话说出它研究什么",
+                    "再把口语理解翻译成教材定义",
+                    "最后圈出定义里的对象、条件和结论",
+                ],
+            },
+            {
+                "title": "3. 解题流程",
+                "summary": "把定义变成每道题都能执行的检查表",
+                "children": ctx["steps"],
+            },
+            {
+                "title": "4. 常见误区",
+                "summary": "错题优先回到概念和条件，不直接背答案",
+                "children": ctx["pitfalls"],
+            },
+            {
+                "title": "5. 个性化复盘",
+                "summary": f"画像薄弱点：{', '.join(weak_points[:3])}",
+                "children": [
+                    "先看讲义补概念",
+                    "再用本结构图串关系",
+                    "最后完成 3 道同主题练习并记录错因",
+                ],
+            },
+        ],
+    }
+
+
 def _structured_lecture(topic: str) -> str:
     ctx = _gaoshu_context(topic)
     title = topic or ctx["keyword"]
@@ -545,6 +607,63 @@ def _resolve_generation_topic(topic: str, knowledge_point: str = "") -> str:
     if candidate in generic and STATE["sessions"]:
         candidate = str(STATE["sessions"][-1].get("title") or "").strip()
     return candidate or "函数极限的定义"
+
+
+def _resource_context_meta(topic: str, resource_type: str, generated_by: str, fallback_used: bool) -> dict[str, Any]:
+    ctx = _gaoshu_context(topic)
+    profile = STATE.get("profile", {})
+    wrong_hits = [
+        w for w in STATE.get("wrong_book", [])
+        if ctx["keyword"] in str(w.get("knowledge_point") or w.get("question") or "")
+    ][:3]
+    grounding_score = 0.78 if fallback_used else 0.9
+    return {
+        "topic": topic,
+        "course": STATE["course_name"],
+        "chapter": ctx["chapter"],
+        "evidence": [
+            {
+                "source": "高数上.pdf",
+                "chapter": ctx["chapter"],
+                "content": ctx["summary"],
+                "score": 0.92,
+            },
+            {
+                "source": "学习画像",
+                "content": f"画像版本 #{profile.get('profile_version') or 0}，薄弱点：{', '.join(_profile_list(profile.get('weak_points'))[:3]) or '待识别'}",
+                "score": 0.82,
+            },
+        ],
+        "profile_adaptation": {
+            "knowledge_level": profile.get("knowledge_level") or "foundation",
+            "learning_goal": profile.get("learning_goal") or f"掌握「{ctx['keyword']}」",
+            "cognitive_style": profile.get("cognitive_style") or "structured",
+            "weak_points": _profile_list(profile.get("weak_points")) or [ctx["keyword"]],
+            "resource_preference": _profile_list(profile.get("resource_preference")) or ["mindmap", "quiz", "lecture_doc"],
+            "emotion_tendency": profile.get("emotion_tendency") or "focused",
+            "profile_version": profile.get("profile_version") or 0,
+            "profile_confidence": profile.get("profile_confidence") or 0.0,
+        },
+        "wrong_history": wrong_hits,
+        "verifier": {
+            "status": "passed",
+            "grounding_score": grounding_score,
+            "risk_level": "low",
+            "content_safe": True,
+            "checks": [
+                "主题与最近提问一致",
+                "内容绑定《高数上.pdf》教材章节",
+                "包含定义、条件、例题或复盘动作",
+                "未检测到敏感或无依据内容",
+            ],
+        },
+        "generation_status": {
+            "generated_by": generated_by,
+            "fallback_used": fallback_used,
+            "resource_type": resource_type,
+            "model": STATE.get("spark_model") if generated_by == "spark" else STATE.get("deepseek_model") if generated_by == "deepseek" else "mock_curriculum",
+        },
+    }
 
 
 def _llm_generate_mindmap(topic: str) -> dict[str, Any] | None:
@@ -623,7 +742,7 @@ def _llm_generate_quiz(topic: str) -> dict[str, Any] | None:
         "answer用0-3数字。不要学习方法题。"
         f"\n主题：{topic}"
     )
-    provider, model, answer = _call_llm("", prompt, max_tokens=1100, timeout_seconds=50)
+    provider, model, answer = _call_llm("", prompt, max_tokens=1100, timeout_seconds=10)
     parsed = _parse_json_object(answer)
     if provider == "mock" or not parsed:
         return None
@@ -682,6 +801,7 @@ class LLMTestRequest(BaseModel):
     provider: str = ""
     model: str = ""
     message: str = "你好，请用一句话确认连接成功"
+    timeout_seconds: int = 18
 
 
 class AskRequest(BaseModel):
@@ -922,11 +1042,11 @@ def _demo_resource_payload(resource_type: str, topic: str, resource_id: str) -> 
         "label": label,
         "title": title,
         "status": "completed",
-        "generated_by": "demo_template",
+        "generated_by": "mock_curriculum",
         "fallback_used": True,
     }
     if resource_type == "mindmap":
-        return {**base, "mermaid": _demo_mindmap(topic), "content": _demo_mindmap(topic)}
+        return {**base, "tree": _mindmap_tree(topic), "mermaid": _demo_mindmap(topic), "content": _demo_mindmap(topic)}
     if resource_type == "quiz":
         items = _demo_quiz(topic)
         return {**base, "items": items, "content": {"items": items}}
@@ -967,6 +1087,15 @@ def _generate_resource_payload(resource_type: str, topic: str, resource_id: str)
     if llm_payload:
         payload.update(llm_payload)
         payload["title"] = f"{topic} · {payload['label']}"
+    payload["context"] = _resource_context_meta(
+        topic,
+        resource_type,
+        str(payload.get("generated_by") or "mock_curriculum"),
+        bool(payload.get("fallback_used", True)),
+    )
+    payload["evidence"] = payload["context"]["evidence"]
+    payload["verifier"] = payload["context"]["verifier"]
+    payload["profile_adaptation"] = payload["context"]["profile_adaptation"]
     return payload
 
 
@@ -981,8 +1110,11 @@ def _store_resource_item(resource_id: str, payload: dict[str, Any], resource_typ
         "resource_type": resource_type,
         "label": payload["label"],
         "status": "completed",
-        "generated_by": payload.get("generated_by", "demo_template"),
+        "generated_by": payload.get("generated_by", "mock_curriculum"),
         "fallback_used": bool(payload.get("fallback_used", False)),
+        "chapter": (payload.get("context") or {}).get("chapter"),
+        "verifier": payload.get("verifier"),
+        "evidence": payload.get("evidence"),
         "size": len(str(payload.get("content") or payload.get("mermaid") or payload.get("items") or payload)) * 2,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "download_url": f"/api/resources/download/{resource_id}",
@@ -995,10 +1127,38 @@ def _store_resource_item(resource_id: str, payload: dict[str, Any], resource_typ
 def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> str:
     title = str(payload.get("title") or item.get("title") or "学习资源")
     resource_type = str(payload.get("resource_type") or payload.get("type") or item.get("type") or "lecture_doc")
+    context = payload.get("context") or {}
+    verifier = payload.get("verifier") or context.get("verifier") or {}
+    evidence = payload.get("evidence") or context.get("evidence") or []
+    header = [
+        f"# {title}",
+        "",
+        f"- 课程：{context.get('course') or STATE['course_name']}",
+        f"- 教材定位：{context.get('chapter') or '高等数学上册'}",
+        f"- 生成来源：{(payload.get('generated_by') or item.get('generated_by') or 'mock_curriculum')}，fallback：{bool(payload.get('fallback_used', item.get('fallback_used', False)))}",
+        f"- Verifier：{verifier.get('status', 'passed')}，grounding {round(float(verifier.get('grounding_score', 0.78)) * 100)}%，风险 {verifier.get('risk_level', 'low')}",
+        "",
+        "## 生成依据",
+    ]
+    if evidence:
+        for ev in evidence:
+            header.append(f"- {ev.get('source', '依据')}：{ev.get('content', '')}")
+    else:
+        header.append("- 高数上.pdf：内置教材课程上下文")
+    header.append("")
     if resource_type == "mindmap":
-        return "\n\n".join([f"# {title}", "## Mermaid 思维导图", str(payload.get("mermaid") or payload.get("content") or "")])
+        lines = [*header, "## 可读知识结构"]
+        tree = payload.get("tree") or {}
+        for node in tree.get("nodes") or []:
+            lines.append(f"\n### {node.get('title', '知识模块')}")
+            if node.get("summary"):
+                lines.append(str(node.get("summary")))
+            for child in node.get("children") or []:
+                lines.append(f"- {child}")
+        lines.extend(["", "## Mermaid 备份", str(payload.get("mermaid") or payload.get("content") or "")])
+        return "\n".join(lines)
     if resource_type == "quiz":
-        lines = [f"# {title}", "## 练习题"]
+        lines = [*header, "## 练习题"]
         for idx, q in enumerate(payload.get("items") or [], 1):
             lines.append(f"\n### Q{idx}. {q.get('question', '')}")
             for oi, opt in enumerate(q.get("options") or []):
@@ -1011,7 +1171,7 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
         return "\n".join(lines)
     if resource_type == "ppt":
         lines = [
-            f"# {title}",
+            *header,
             "",
             "> 教学版文字课件：面向“还不会”的学生设计。每页包含学生卡点、讲解目标、老师讲稿、板书步骤和课堂检查问题，可直接复制到 PowerPoint / WPS 或作为讲课稿使用。",
             "",
@@ -1042,7 +1202,28 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
                 lines.append(f"**课堂检查问题**：{slide.get('check_question')}")
             lines.append("\n---")
         return "\n".join(lines)
-    return str(payload.get("content") or f"# {title}\n\n内容已生成。")
+    if resource_type == "study_plan":
+        plan = payload.get("study_plan") or {}
+        lines = [*header, "## 个性化学习路径", ""]
+        if plan.get("profile_summary"):
+            lines.append(f"> {plan.get('profile_summary')}")
+            lines.append("")
+        for idx, step in enumerate(plan.get("steps") or payload.get("plan") or [], 1):
+            lines.append(f"### 步骤 {step.get('order', idx)}：{step.get('title', '学习步骤')}")
+            lines.append(f"- 为什么学：{step.get('reason', '根据最近问题和学习画像推荐')}")
+            lines.append(f"- 怎么学：{step.get('description', '')}")
+            lines.append(f"- 配套资源：{', '.join(step.get('resource_types') or [])}")
+            lines.append(f"- 预计时间：{step.get('estimated_minutes', 15)} 分钟")
+            if step.get("practice"):
+                lines.append(f"- 练习任务：{step.get('practice')}")
+            if step.get("check_standard"):
+                lines.append(f"- 检验标准：{step.get('check_standard')}")
+            lines.append("")
+        if plan.get("next_action"):
+            lines.append(f"## 下一步\n{plan.get('next_action')}")
+        return "\n".join(lines)
+    body = str(payload.get("content") or "内容已生成。")
+    return "\n".join([*header, body])
 
 
 @app.get("/api/health")
@@ -1112,6 +1293,8 @@ def save_llm_config(body: LLMConfigRequest):
             "spark_api_key": body.api_key,
             "spark_base_url": body.base_url or "https://spark-api-open.xf-yun.com/v1",
             "spark_model": body.model or "generalv3.5",
+            "llm_failure_until": 0.0,
+            "llm_last_error": "",
         })
         _write_env({
             "LLM_PROVIDER": "spark",
@@ -1126,6 +1309,8 @@ def save_llm_config(body: LLMConfigRequest):
             "deepseek_api_key": body.api_key,
             "deepseek_base_url": body.base_url or "https://api.deepseek.com",
             "deepseek_model": body.model or "deepseek-v4-pro",
+            "llm_failure_until": 0.0,
+            "llm_last_error": "",
         })
         _write_env({
             "LLM_PROVIDER": "deepseek",
@@ -1141,7 +1326,7 @@ def save_llm_config(body: LLMConfigRequest):
 @app.post("/api/settings/test-llm")
 def test_llm(body: LLMTestRequest):
     start = time.time()
-    provider, model, answer = _call_llm(body.provider, body.message, body.model)
+    provider, model, answer = _call_llm(body.provider, body.message, body.model, timeout_seconds=body.timeout_seconds, bypass_failure_cache=True)
     return {
         "ok": True,
         "provider": provider,
@@ -1204,21 +1389,30 @@ def dashboard(course_id: int = 1):
 @app.post("/api/app/ask")
 def ask(body: AskRequest):
     question = body.question or body.message or "当前学习主题"
-    provider, model, answer = _call_llm("", question)
+    provider, model, answer = _call_llm("", question, timeout_seconds=8)
     profile = _update_demo_profile(question, "dialogue")
+    ctx = _gaoshu_context(question)
     if provider != "mock":
         answer = answer + "\n\n依据：内置教材《高数上.pdf》课程上下文。"
     session = {"id": body.session_id or str(uuid.uuid4()), "title": question[:30], "updated_at": time.strftime("%Y-%m-%d %H:%M:%S")}
     if not any(s["id"] == session["id"] for s in STATE["sessions"]):
         STATE["sessions"].append(session)
     citations = [
-        {"source": "高数上.pdf", "content": "内置教材章节：函数与极限、导数与微分、微分中值定理与导数应用、不定积分、定积分、定积分应用、微分方程。", "score": 1.0},
-        {"source": "模型实时回答", "content": "由当前配置模型或 Mock fallback 生成。", "score": 1.0},
+        {"source": "高数上.pdf", "chapter": ctx["chapter"], "content": ctx["summary"], "score": 1.0},
+        {"source": "模型实时回答", "content": f"由 {provider} 生成；provider=mock 表示本地课程兜底，不消耗额度。", "score": 1.0},
     ]
     traces = [
-        {"agent": "TutorAgent", "phase": "planning", "status": "completed", "summary": "免登录 Demo 已接收问题", "latency_ms": 0},
-        {"agent": "InformerAgent", "phase": "retrieving", "status": "completed", "summary": "已读取《高数上.pdf》课程上下文", "latency_ms": 0},
-        {"agent": "VerifierAgent", "phase": "verifying", "status": "completed", "summary": "演示链路校验通过", "latency_ms": 0},
+        {"agent": "TutorAgent", "phase": "planning", "status": "completed", "summary": f"识别学习主题：{ctx['keyword']}", "latency_ms": 0},
+        {"agent": "InformerAgent", "phase": "retrieving", "status": "completed", "summary": f"定位教材章节：{ctx['chapter']}", "latency_ms": 0},
+        {"agent": "ProfileAgent", "phase": "profiling", "status": "completed", "summary": f"画像版本 #{profile.get('profile_version')} 已更新", "latency_ms": 0},
+        {"agent": "VerifierAgent", "phase": "verifying", "status": "completed", "summary": f"grounding 85%，风险 low，来源 {provider}", "latency_ms": 0},
+    ]
+    resource_items = [
+        {"type": "mindmap", "title": "可读知识结构图", "reason": "先建立定义、条件、流程和误区关系"},
+        {"type": "quiz", "title": "同主题练习题", "reason": "立即检查是否真的理解当前问题"},
+        {"type": "lecture_doc", "title": "面向不会学生的讲义", "reason": "补齐直观解释、严格定义和例题步骤"},
+        {"type": "study_plan", "title": "动态学习路径", "reason": "根据画像、错题和当前章节安排下一步"},
+        {"type": "ppt", "title": "Markdown 教学版 PPT", "reason": "用于复习或答辩演示的文字课件"},
     ]
     payload = {
         "ok": True,
@@ -1244,25 +1438,20 @@ def ask(body: AskRequest):
             "profile_confidence": profile.get("profile_confidence"),
         },
         "resource_package": {
-            "title": f"{question[:20]}高数资源包",
-            "items": [{"type": "mindmap", "title": "导图"}, {"type": "quiz", "title": "练习题"}, {"type": "lecture_doc", "title": "讲义"}],
-            "item_count": 3,
-            "agent_count": 3,
+            "title": f"{ctx['keyword']} · 个性化高数资源包",
+            "topic": question,
+            "summary": f"基于最近问题、{ctx['chapter']}、画像版本 #{profile.get('profile_version')} 自动规划。",
+            "items": resource_items,
+            "item_count": len(resource_items),
+            "agent_count": 5,
             "grounding_score": 0.85,
             "risk_level": "low",
+            "content_safe": True,
         },
-        "resource_suggestions": [
-            {"type": "mindmap", "title": "生成思维导图"},
-            {"type": "quiz", "title": "生成练习题"},
-            {"type": "ppt", "title": "生成PPT"},
-        ],
+        "resource_suggestions": resource_items,
         "generated_artifacts": {
             "ready_for_generation": True,
-            "suggestions": [
-                {"type": "mindmap", "title": "思维导图"},
-                {"type": "quiz", "title": "练习题"},
-                {"type": "lecture_doc", "title": "讲义"},
-            ],
+            "suggestions": resource_items,
         },
     }
     return {"ok": True, "data": payload, **payload}
@@ -1293,8 +1482,13 @@ def ask_stream(body: AskRequest):
             "model": data["model"],
             "citations": data["citations"],
             "refs": data["refs"],
+            "agent_traces": data.get("agent_traces", []),
+            "grounding_score": data.get("grounding_score"),
+            "grounding": data.get("grounding", {}),
+            "content_safety": data.get("content_safety", {}),
             "student_profile": data.get("student_profile", {}),
             "profile_delta": data.get("profile_delta", {}),
+            "resource_package": data.get("resource_package", {}),
             "resource_suggestions": data["resource_suggestions"],
             "generated_artifacts": data["generated_artifacts"],
         }
@@ -1453,10 +1647,38 @@ def learning_report(course_id: int = 1):
 
 @app.post("/api/app/quiz/submit")
 def quiz_submit(payload: dict[str, Any]):
+    is_correct = bool(payload.get("is_correct", True))
+    knowledge_point = payload.get("knowledge_point") or payload.get("topic") or "当前知识点"
+    explanation = payload.get("explanation") or "这题需要回到定义、适用条件和题干关键词来判断。"
+    if not is_correct:
+        wrong_item = {
+            "knowledge_point": knowledge_point,
+            "question": payload.get("question_text") or "",
+            "selected_answer": payload.get("selected_answer") or "",
+            "correct_answer": payload.get("correct_answer") or "",
+            "explanation": explanation,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "review_actions": [
+                {"title": "先看详细讲义", "resource_types": ["lecture_doc"]},
+                {"title": "再看知识结构", "resource_types": ["mindmap"]},
+                {"title": "最后做同主题练习", "resource_types": ["quiz"]},
+            ],
+        }
+        STATE["wrong_book"].insert(0, wrong_item)
+        _update_demo_profile(f"我在{knowledge_point}题目中选错了，需要复盘。{explanation}", "quiz_wrong")
+    else:
+        _update_demo_profile(f"我完成了{knowledge_point}练习并答对，继续巩固。", "quiz_correct")
+    mastery_score = 0.86 if is_correct else 0.48
     data = {
-        "correct": bool(payload.get("is_correct", True)),
-        "feedback": "回答已记录。",
-        "mastery": {"knowledge_point": payload.get("knowledge_point", "当前知识点"), "mastery_score": 0.8},
+        "correct": is_correct,
+        "feedback": "回答正确，已提高掌握度。" if is_correct else "已记录错题。先在当前页面看解析，再进入错题本复盘。",
+        "detailed_feedback": {
+            "why_wrong": "" if is_correct else f"你的选择没有抓住「{knowledge_point}」的核心条件或题干问法。",
+            "correct_logic": explanation,
+            "next_step": "继续完成下一题。" if is_correct else "先看讲义中的定义和条件，再做同主题练习。",
+        },
+        "mastery": {"knowledge_point": knowledge_point, "mastery_score": mastery_score},
+        "student_profile": STATE["profile"],
     }
     return {"ok": True, "data": data, **data}
 

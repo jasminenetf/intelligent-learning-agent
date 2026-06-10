@@ -71,6 +71,9 @@ curl http://127.0.0.1:8010/api/app/bootstrap
 # P0 smoke
 python scripts/verify_p0_smoke.py
 
+# 深度 QA：语法、smoke、问答资源包、下载、错题反馈、敏感信息
+python scripts/deep_qa_check.py
+
 # 初始化演示数据
 python scripts/seed_demo_data.py
 
@@ -102,7 +105,9 @@ project-root/
 | Spark API 调用失败 | 检查 `backend/.env` 中 Spark APIPassword、模型名和额度 |
 | DeepSeek 调用失败 | 检查 `backend/.env` 中 DeepSeek Key、模型权限和余额 |
 | ChromaDB 无结果 | 确认已上传教材、已解析出知识片段并重建索引 |
-| PPT 下载失败 | 检查 `data/generated/` 和 `/api/resources/generated` |
+| Markdown PPT 下载失败 | 检查 `/api/resources/generated` 和 `/api/resources/download/{resource_id}`；当前答辩主链路下载 Markdown 文本，不依赖 `.pptx` |
+| 思维导图看不清 | 会话中心默认显示可读知识树，可用全屏按钮查看；Mermaid 仅作为备份 |
+| 测验题偏离问题 | 运行 `python scripts/deep_qa_check.py`，它会检查题目是否来自当前问题和教材上下文 |
 | 向量检索无结果 | 确认已上传教材并构建索引 |
 | 端口冲突 | 修改 docker-compose.yml 中的端口映射 |
 

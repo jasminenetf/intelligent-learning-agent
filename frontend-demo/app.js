@@ -583,7 +583,19 @@ function _renderAskSidebar(data){
     const mastery = data.mastery_overview || {};
     const masteryLine = mastery.avg_mastery !== undefined ? '<div class="course-meta"><span>平均掌握度 ' + Math.round(Number(mastery.avg_mastery || 0) * 100) + '%</span><span>强项 ' + esc((mastery.strong_points || []).slice(0,2).join(' · ') || '暂无') + '</span></div>' : '';
     if (sp.knowledge_level || sp.learning_goal || masteryLine) {
-      profileMini.innerHTML = '<h4>🎓 学习画像</h4><div class="course-meta"><span>基础 ' + esc(sp.knowledge_level || '—') + '</span><span>目标 ' + esc(sp.learning_goal || '—') + '</span></div>' + masteryLine + '<button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="navTo(\'profile\')">查看画像中心</button>';
+      const weak = _parseJsonList(sp.weak_points).slice(0, 3).join(' · ') || '待识别';
+      const prefs = _parseJsonList(sp.resource_preference).slice(0, 4).map(resourceLabel).join(' · ') || '待识别';
+      profileMini.innerHTML = '<h4>🎓 学习画像</h4>' +
+        '<div class="profile-mini-grid">' +
+          '<span>基础：' + esc(sp.knowledge_level || '—') + '</span>' +
+          '<span>目标：' + esc(sp.learning_goal || '—') + '</span>' +
+          '<span>风格：' + esc(sp.cognitive_style || '—') + '</span>' +
+          '<span>薄弱：' + esc(weak) + '</span>' +
+          '<span>偏好：' + esc(prefs) + '</span>' +
+          '<span>信心：' + esc(sp.emotion_tendency || '—') + '</span>' +
+        '</div>' +
+        '<div class="course-meta" style="margin-top:6px"><span>证据：' + esc((sp.raw_evidence || '').slice(0, 42) || '最近对话与测验行为') + '</span><span>置信度 ' + Math.round(Number(sp.profile_confidence || 0) * 100) + '%</span></div>' +
+        masteryLine + '<button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="navTo(\'profile\')">查看画像中心</button>';
     }
   }
   const packagePanel = document.getElementById('resource-package-panel');
@@ -706,6 +718,72 @@ function _fitMermaidToView(){
   _applyMermaidZoom();
 }
 
+function _mindmapTreeFromMermaid(code, title){
+  const text = String(code || '');
+  const labels = [];
+  text.split(/\n+/).forEach(function(line){
+    const m = line.match(/\["([^"]+)"\]/) || line.match(/\(([^()]+)\)/);
+    if (m && m[1]) {
+      const label = m[1].replace(/^\d+\s*/, '').trim();
+      if (label && !labels.includes(label)) labels.push(label);
+    }
+  });
+  const root = labels.shift() || title || '知识结构';
+  const buckets = [
+    { title: '教材定位', summary: '先找到这个知识点在《高数上.pdf》中的章节位置', children: [] },
+    { title: '核心定义', summary: '把口语理解转换成教材定义和条件', children: [] },
+    { title: '解题流程', summary: '把定义变成可执行步骤', children: [] },
+    { title: '常见误区', summary: '做错题时先回到条件和概念', children: [] },
+    { title: '巩固路径', summary: '讲义、结构图、练习和错题复盘形成闭环', children: [] },
+  ];
+  labels.forEach(function(label, idx){
+    buckets[Math.min(buckets.length - 1, Math.floor(idx / 3))].children.push(label);
+  });
+  return { title: root, nodes: buckets.filter(function(x){ return x.children.length || x.summary; }) };
+}
+
+function _renderMindmapTreePanel(el, data, title){
+  if (!el) return;
+  const tree = (data && data.tree) || _mindmapTreeFromMermaid(data && (data.mermaid || data.content), title);
+  const mermaidCode = (data && (data.mermaid || data.content)) || '';
+  const nodes = Array.isArray(tree.nodes) ? tree.nodes : [];
+  const nodeHtml = nodes.map(function(node, idx){
+    const children = Array.isArray(node.children) ? node.children : [];
+    return '<details class="mindmap-tree-card" open>' +
+      '<summary><span class="mm-order">' + (idx + 1) + '</span><span><strong>' + esc(node.title || node.label || '知识模块') + '</strong>' +
+      (node.summary ? '<small>' + esc(node.summary) + '</small>' : '') + '</span></summary>' +
+      (children.length ? '<ul>' + children.map(function(child){ return '<li>' + esc(typeof child === 'object' ? (child.title || child.label || child.summary || '') : child) + '</li>'; }).join('') + '</ul>' : '') +
+    '</details>';
+  }).join('');
+  el.innerHTML =
+    '<div class="mindmap-product mindmap-readable-product">' +
+      '<div class="mindmap-toolbar">' +
+        '<div class="mt-title-area"><div class="mt-title">' + esc(title || tree.title || '知识结构图') + '</div><div class="mt-subtitle">可折叠知识树，优先保证看得清；Mermaid 原图作为备份查看</div></div>' +
+        '<div class="mt-actions">' +
+          '<span class="mindmap-status-tag generated">已生成</span>' +
+          '<button type="button" class="btn btn-sm btn-outline" onclick="_toggleMindmapFullscreen()">全屏/退出</button>' +
+          '<button type="button" class="btn btn-sm btn-outline" onclick="_toggleMermaidBackup()">Mermaid备份</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mindmap-tree-readable">' +
+        '<div class="mindmap-root-card"><h4>' + esc(tree.title || title || '当前知识点') + '</h4><p>' + esc(tree.subtitle || '按学习顺序展开：教材定位、核心定义、解题流程、常见误区、复盘路径。') + '</p></div>' +
+        (nodeHtml || '<div class="empty-state"><p>暂无结构内容</p></div>') +
+      '</div>' +
+      '<div class="mindmap-backup" id="mindmap-backup" style="display:none"><pre class="mermaid-fallback">' + esc(mermaidCode || '暂无 Mermaid 备份') + '</pre></div>' +
+      '<div class="mindmap-info-bar"><span class="mi-item"><span class="mi-dot"></span>默认显示可读知识树</span><span class="mi-item">点击模块可折叠，适合答辩和实际学习</span></div>' +
+    '</div>';
+}
+
+window._toggleMindmapFullscreen = function(){
+  const box = document.querySelector('.mindmap-readable-product');
+  if (box) box.classList.toggle('mindmap-fullscreen');
+};
+
+window._toggleMermaidBackup = function(){
+  const box = document.getElementById('mindmap-backup');
+  if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+};
+
 function _renderMermaidPanel(el, code, title){
   if (!el) return;
   el.innerHTML =
@@ -737,6 +815,28 @@ function _renderMermaidPanel(el, code, title){
       host.innerHTML = '<pre class="mermaid-fallback">' + esc(code || '暂无导图') + '</pre>';
     });
   }
+}
+
+function _renderStudyPlanPanel(el, d, topic){
+  if (!el) return;
+  const plan = d.study_plan || d.plan && { steps: d.plan } || d || {};
+  const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  const summary = plan.profile_summary || '基于最近提问、教材章节、画像和错题动态生成。';
+  el.innerHTML = '<div class="course-card"><h4>' + esc(plan.title || ((topic || '当前主题') + ' · 学习路径')) + '</h4><div class="course-meta"><span>' + esc(summary) + '</span></div>' +
+    (plan.next_action ? '<div class="course-meta" style="margin-top:6px"><span>下一步：' + esc(plan.next_action) + '</span></div>' : '') +
+    '<div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, (plan.title || topic || '学习路径') + '.md').replace('>下载<', '>下载路径<') + '</div></div>' +
+    (steps.length ? steps.map(function(s, i){
+      const types = Array.isArray(s.resource_types) ? s.resource_types : [];
+      const btns = types.slice(0, 4).map(function(t){ return '<button class="btn btn-sm btn-outline" onclick="loadArtifactPreview(' + jsAttrArg(t) + ', ' + jsAttrArg(s.title || topic || '') + ')">生成' + esc(resourceLabel(t)) + '</button>'; }).join('');
+      return '<div class="course-card plan-card-enhanced"><h4>步骤 ' + esc(String(s.order || i + 1)) + ' · ' + esc(s.title || '学习步骤') + '</h4>' +
+        '<p style="font-size:13px;line-height:1.75;color:var(--gray-700);margin:8px 0">' + esc(s.description || '') + '</p>' +
+        '<div class="course-meta"><span>为什么：' + esc(s.reason || '根据最近问题和画像推荐') + '</span></div>' +
+        '<div class="course-meta" style="margin-top:6px"><span>预计 ' + esc(String(s.estimated_minutes || 15)) + ' 分钟</span><span>资源：' + esc(types.map(resourceLabel).join(' / ') || '讲义 / 导图 / 练习') + '</span></div>' +
+        (s.practice ? '<div class="course-meta" style="margin-top:6px"><span>练习：' + esc(s.practice) + '</span></div>' : '') +
+        (s.check_standard ? '<div class="course-meta" style="margin-top:6px"><span>检验标准：' + esc(s.check_standard) + '</span></div>' : '') +
+        (btns ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + btns + '</div>' : '') +
+      '</div>';
+    }).join('') : '<div class="empty-state"><p>暂无学习路径</p></div>');
 }
 
 function _renderQuizPanel(el, items, topic){
@@ -880,11 +980,6 @@ async function loadArtifactPreview(type, topic){
   _initArtifactTabs();
   _activateArtifactTab(type);
   panel.innerHTML = '<div class="loading-block"><span class="spinner"></span> 正在生成' + esc(resourceLabel(type)) + '...</div>';
-  if (type === 'study_plan') {
-    S.pendingStudyTopic = topic || '';
-    navTo('learning-path');
-    return;
-  }
   try {
     const r = await api('/api/app/generate', {
       method: 'POST',
@@ -897,11 +992,15 @@ async function loadArtifactPreview(type, topic){
       return;
     }
     if (type === 'mindmap') {
-      _renderMermaidPanel(panel, _normalizeMermaid(d.mermaid || d.raw_json || d.content || d, topic), d.title || (topic + ' · 思维导图'));
+      _renderMindmapTreePanel(panel, d, d.title || (topic + ' · 思维导图'));
     } else if (type === 'quiz') {
       _renderQuizPanel(panel, d.items || d.raw_json || d.content || d, topic);
     } else if (type === 'ppt') {
       _renderPptPanel(panel, d);
+    } else if (type === 'study_plan') {
+      S.pendingStudyPlan = d.study_plan || null;
+      S.pendingStudyTopic = topic || '';
+      _renderStudyPlanPanel(panel, d, topic);
     } else {
       _renderTextResourcePanel(panel, d, type);
     }
@@ -917,8 +1016,8 @@ async function autoGenerateStudyArtifacts(topic, suggestions){
   if (!key || S.autoArtifactRunning || S.autoArtifactTopicKey === key) return;
   S.autoArtifactRunning = true;
   S.autoArtifactTopicKey = key;
-  const wanted = ['mindmap', 'quiz', 'lecture_doc'];
-  toast('正在自动生成导图、练习题和讲义...', 'info');
+  const wanted = ['mindmap', 'quiz', 'lecture_doc', 'study_plan', 'ppt'];
+  toast('正在自动生成导图、练习题、讲义、学习路径和PPT文字稿...', 'info');
   try {
     for (const type of wanted) {
       try {
@@ -926,7 +1025,7 @@ async function autoGenerateStudyArtifacts(topic, suggestions){
       } catch (_) {}
     }
     _activateArtifactTab('mindmap');
-    toast('配套导图、练习题和讲义已生成', 'success');
+    toast('配套导图、练习题、讲义、学习路径和PPT文字稿已生成', 'success');
   } finally {
     S.autoArtifactRunning = false;
   }
@@ -934,7 +1033,7 @@ async function autoGenerateStudyArtifacts(topic, suggestions){
 
 window.quickGenerateFromChat = function(type, topic){
   topic = topic || _currentLearningTopic();
-  if (['mindmap', 'quiz', 'lecture_doc', 'ppt', 'reading', 'video_script'].includes(type)) {
+  if (['mindmap', 'quiz', 'lecture_doc', 'ppt', 'study_plan', 'reading', 'video_script'].includes(type)) {
     const assistantPage = document.getElementById('page-assistant');
     if (assistantPage && assistantPage.classList.contains('active')) {
       loadArtifactPreview(type, topic);
@@ -1203,6 +1302,7 @@ function _resourceTypeOf(file){
   if (/mindmap|导图|脑图|mermaid/.test(hay)) return 'mindmap';
   if (/quiz|题|练习|test/.test(hay)) return 'quiz';
   if (/ppt|presentation|slide|课件/.test(hay)) return 'ppt';
+  if (/study_plan|学习路径|路径|计划/.test(hay)) return 'study_plan';
   if (/reading|阅读|拓展/.test(hay)) return 'reading';
   if (/video|script|视频|脚本/.test(hay)) return 'video_script';
   if (/lecture|doc|讲义|笔记|markdown|pdf/.test(hay)) return 'lecture_doc';

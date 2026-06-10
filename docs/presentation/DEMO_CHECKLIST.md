@@ -1,111 +1,137 @@
-# Demo 操作清单 + 应急方案
+# Demo 操作清单与应急方案
 
----
+当前答辩主线：`高数上`课程智能助教。演示目标是证明系统能完成：
 
-## 启动命令
+`提问 -> 教材检索 -> 可信回答 -> 自动生成学习资源 -> 做题反馈 -> 错题复盘 -> 画像更新 -> 学习路径调整`
 
-```bash
-# 终端1: 后端 (必须先启动)
+## 启动方式
+
+推荐直接双击项目根目录：
+
+```text
+启动智能学习Agent.bat
+```
+
+手动启动时使用当前 Demo 入口：
+
+```powershell
 cd C:\Users\zhang\Desktop\智能学习\backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010
 
-# 终端2: 前端
 cd C:\Users\zhang\Desktop\智能学习\frontend-demo
 python -m http.server 5173
-# 浏览器: http://127.0.0.1:5173
 ```
 
----
+浏览器访问：
 
-## 登录状态
+```text
+http://127.0.0.1:5173
+```
 
-当前答辩 Demo 使用免登录体验。正式注册/登录和角色权限作为后续安全加固项，不作为当前演示依赖。
-
----
-
-## 课程 ID
-
-`2` — 高等数学上（已有课程资料和 chunks）
+后端健康检查：
 
 ```powershell
-# 确认课程存在
-curl http://127.0.0.1:8000/api/courses
+curl http://127.0.0.1:8010/health
 ```
 
----
-
-## 演示前健康检查
+## 演示前检查
 
 ```powershell
-# 1. 后端存活
-curl http://127.0.0.1:8000/health
-# → {"status":"ok"}
-
-# 2. 模型状态
-curl http://127.0.0.1:8000/api/settings/status
-# → 推荐显示 spark；无密钥时允许 deepseek/mock fallback 验证工程链路
-
-# 3. RAG 有数据
-curl http://127.0.0.1:8000/api/app/bootstrap
-# → vector_count > 0
+python -m py_compile backend/app/demo_main.py
+node --check frontend-demo/app.js
+$env:P0_SMOKE_BASE='http://127.0.0.1:8010'
+python scripts/verify_p0_smoke.py
+python scripts/deep_qa_check.py
 ```
 
----
+`deep_qa_check.py` 会检查：
 
-## 演示主题
+- 语法检查
+- P0 smoke
+- 问答后是否出现 5 类资源建议
+- 导图、练习、讲义、学习路径、Markdown PPT 是否可生成
+- 下载文件是否包含教材依据和 Verifier
+- 答错题是否原地反馈并写入错题闭环
+- 明显密钥泄露扫描
 
-| 用途 | topic |
-|------|-------|
-| 默认演示 | 导数与极限入门 |
-| 备用 | 函数极限 |
-| 演示PPT | 高等数学导数入门 |
+## 推荐演示问题
 
----
+```text
+我不懂函数极限，讲清定义、常见误区，并给一个例题
+```
 
-## 演示问题
+备用问题：
 
-| 用途 | question |
-|------|---------|
-| 默认RAG | 根据课程资料解释导数和函数变化率的关系 |
-| 备用 | 函数极限的定义是什么 |
+```text
+请根据教材解释导数的几何意义和物理意义
+```
 
----
+```text
+我对定积分和不定积分总是混淆，请用例题讲清楚
+```
+
+## 必须展示的页面和证据
+
+| 页面 | 展示点 |
+|---|---|
+| 设置页 | Spark / Mock 状态，真实模型失败时能自动 fallback |
+| 会话中心 | 提问后自动出现导图、练习、讲义、学习路径、PPT 文本版 |
+| 右侧依据 | 教材引用、grounding、风险等级、内容安全 |
+| Agent 轨迹 | Tutor / Informer / Profile / Verifier 等协作步骤 |
+| 思维导图 | 默认可读知识树，支持全屏和 Mermaid 备份 |
+| 练习题 | 题目绑定当前问题，答错后原地详细讲解 |
+| 画像中心 | 六维画像、证据来源、置信度、历史版本 |
+| 学习路径 | 每步有原因、资源、预计时间、练习任务、检验标准 |
+| 资源中心 | `.md` 下载可打开，文件内含教材依据和 Verifier |
+| 学习报告 | 掌握度、错因、薄弱点、下一步推荐 |
 
 ## 应急方案
 
-### Spark / fallback 模型超时
-- 现象: 资源生成卡住超过30秒
-- 方案: 刷新页面，重试。如持续超时，用 mock 模式演示流程，口头说明 Spark 为主引擎，fallback 用于工程稳定性
-- 检查: `curl http://127.0.0.1:8000/api/settings/status`
+### Spark Key 不可用或 401
 
-### course_id 不存在
-- 现象: 返回 404
-- 方案: 检查 `curl http://127.0.0.1:8000/api/courses`，使用实际存在的 ID
+现象：顶部显示 `Mock`，回答中出现真实模型失败原因。
 
-### 前端无法连接后端
-- 现象: 状态栏显示"未连接"，API 返回 Network Error
-- 方案: 
-  1. 检查后端是否在 8000 端口运行
-  2. 浏览器打开 http://127.0.0.1:8000/health 测试
-  3. 检查 CORS 是否生效
+处理：
 
-### PPT 下载失败
-- 现象: 点击下载无反应或 404
-- 方案: 
-  1. 重新生成 PPT（resource_id 可能过期）
-  2. 检查 backend/data/generated/ 目录
+- 继续演示本地课程 fallback，说明它用于节省额度和保证答辩稳定。
+- 如需验证真实 Key，只在设置页执行一次连接测试。
+- 系统有失败缓存，坏 Key 不会反复拖慢资源生成。
 
-### Mermaid 不渲染
-- 现象: 只显示 Mermaid 源码文本
-- 方案: 
-  1. 检查网络能否访问 cdn.jsdelivr.net
-  2. 展示 Mermaid 源码文本，口头说明渲染效果
+### 首次提问等待数秒
 
-### 后端端口被占用
-- 现象: `address already in use`
-- 方案: 执行 `停止智能学习Agent.bat`，或在任务管理器中结束占用 8000 端口的 Python 进程，然后重启
+原因：系统会短时间尝试真实模型，失败后进入本地课程 fallback。
 
----
+处理：
+
+- 等待一次即可。
+- 后续资源生成会明显变快。
+
+### 导图看不全
+
+当前默认已改为可读知识树。若仍需展示原图：
+
+- 点击 `Mermaid备份`。
+- 点击 `全屏/退出` 展示大图结构。
+
+### 资源下载失败
+
+处理：
+
+- 到资源中心刷新。
+- 重新生成对应资源。
+- 确认后端 `http://127.0.0.1:8010/health` 正常。
+
+### 端口占用
+
+```powershell
+.\停止智能学习Agent.bat
+```
+
+或手动查看：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8010 -State Listen
+```
 
 ## 演示后清理
 

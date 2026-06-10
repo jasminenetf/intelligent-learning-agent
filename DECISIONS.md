@@ -141,6 +141,21 @@
 - **约束**：该模式仅用于本地 Demo/答辩；生产环境需要重新启用正式认证、权限和密钥管理。
 - **影响**：启动智能学习Agent.bat, 停止智能学习Agent.bat, auth.py, demo_main.py, frontend-demo/app.js
 
+## 决策 021：答辩 Demo PPT 交付格式
+- **日期**：2026-06-10
+- **原决策**：决策 017 中当前 PPT 生成使用 `python-pptx`。
+- **新决策**：答辩 Demo 主链路改为生成稳定可打开的 Markdown 教学版 PPT；内容包含讲稿、板书、例题、自测、错因提醒和教材依据。`.pptx` 继续作为 P2/P3 可选增强，不作为当前稳定演示依赖。
+- **原因**：本机生成的 `.pptx` 曾出现打开失败和乱码风险；Markdown 更稳定、可复制、可下载，也更适合展示“面向不会的学生教会她”的教学质量。
+- **审批**：用户要求“PPT 不如生成文字版本模拟 PPT”。
+- **影响**：demo_main.py, frontend-demo/app.js, README.md, RUNBOOK.md, presentation docs
+
+## 决策 022：深度 QA 门禁
+- **日期**：2026-06-10
+- **决策**：新增 `scripts/deep_qa_check.py` 作为答辩前本地深度检查脚本，覆盖语法检查、P0 smoke、问答自动资源包、资源下载、错题反馈和敏感信息扫描。
+- **原因**：用户要求“不要让我自己找问题”，需要把人工点击发现的问题固化为可重复回归门禁。
+- **约束**：deep QA 默认使用 Mock/fallback，不主动消耗 Spark 额度；真实模型只在关键连通性验证时单独测试。
+- **影响**：scripts/deep_qa_check.py, docs/presentation/*, RUNBOOK.md, TASKS.md
+
 ---
 
 ## 变更记录模板

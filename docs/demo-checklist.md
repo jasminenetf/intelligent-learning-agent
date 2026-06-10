@@ -10,10 +10,10 @@
 - [ ] 已启动后端：
 
 ```bash
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app.demo_main:app --host 127.0.0.1 --port 8010 --reload
 ```
 
-- [ ] 健康检查可访问：`http://127.0.0.1:8000/health`
+- [ ] 健康检查可访问：`http://127.0.0.1:8010/health`
 
 ### 前端
 
@@ -29,6 +29,12 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 python scripts/verify_p0_smoke.py
 ```
 
+- [ ] 已运行 deep QA：
+
+```bash
+python scripts/deep_qa_check.py
+```
+
 - [ ] 若后端使用临时端口，例如 `8010`：
 
 ```powershell
@@ -42,7 +48,7 @@ python scripts/verify_p0_smoke.py
 
 - [ ] 已准备学生账号
 - [ ] 已确认可登录
-- [ ] 已选择或准备课程，例如：人工智能导论
+- [ ] 已选择或准备课程，例如：高等数学上册
 - [ ] 课程中已有资料或可使用 fallback 演示
 - [ ] 若课程资料为空，准备说明：系统会安全跳过无资料问答，并保留其他学习闭环演示
 
@@ -51,21 +57,21 @@ python scripts/verify_p0_smoke.py
 主问题：
 
 ```text
-请结合课程资料解释过拟合与正则化，并推荐下一步学习资源。
+我不懂函数极限，讲清定义、常见误区，并给一个例题。
 ```
 
 备用问题：
 
 ```text
-我基础一般，想复习机器学习中的过拟合，能不能用例子讲清楚？
+我对微积分基础薄弱，能不能用直观例子讲清函数极限？
 ```
 
 ```text
-请帮我生成过拟合与正则化的讲义、思维导图和练习题。
+请根据我的错题知识点「函数极限」讲清楚定义、常见误区，并给一个例题。
 ```
 
 ```text
-我准备期末复习，过拟合、正则化、训练集和测试集之间有什么关系？
+我准备期末复习，函数极限、连续和导数之间有什么关系？
 ```
 
 ## 4. 演示流程检查
@@ -119,7 +125,7 @@ python scripts/verify_p0_smoke.py
 - [ ] 讲义卡片
 - [ ] 思维导图
 - [ ] 练习题
-- [ ] PPT 卡片或下载入口
+- [ ] Markdown PPT 卡片或下载入口
 - [ ] 拓展阅读
 - [ ] 视频脚本分镜
 
@@ -127,7 +133,7 @@ python scripts/verify_p0_smoke.py
 
 - [ ] 打开或生成练习题
 - [ ] 提交一道题
-- [ ] 进入错题本
+- [ ] 原地查看详细错因讲解，再进入错题本
 - [ ] 展示错题知识点
 - [ ] 展示解析
 - [ ] 展示掌握度条
@@ -195,5 +201,5 @@ python scripts/verify_p0_smoke.py
 - [ ] `docs/ppt-outline.md` 存在
 - [ ] `docs/demo-script-7min.md` 存在
 - [ ] `docs/demo-checklist.md` 存在
-- [ ] P0 smoke 通过
+- [ ] P0 smoke 和 deep QA 通过
 - [ ] 没有提交真实密钥

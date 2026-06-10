@@ -159,6 +159,25 @@ a{color:var(--primary);text-decoration:none}
 .mindmap-info-bar .mi-item{display:flex;align-items:center;gap:4px}
 .mindmap-info-bar .mi-dot{width:6px;height:6px;border-radius:50%;background:var(--success);display:inline-block}
 
+.mindmap-readable-product{min-height:100%}
+.mindmap-tree-readable{padding:16px;overflow:auto;display:grid;gap:10px;align-content:start;background:linear-gradient(180deg,#fff,var(--gray-50));min-height:560px}
+.mindmap-root-card{border:1px solid var(--primary-light);background:var(--primary-bg);border-radius:var(--radius);padding:14px 16px}
+.mindmap-root-card h4{font-size:16px;color:var(--primary-dark);margin-bottom:4px}
+.mindmap-root-card p{font-size:12px;color:var(--gray-600);line-height:1.7}
+.mindmap-tree-card{border:1px solid var(--gray-200);background:#fff;border-radius:var(--radius);overflow:hidden}
+.mindmap-tree-card summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:flex-start;padding:12px 14px}
+.mindmap-tree-card summary::-webkit-details-marker{display:none}
+.mindmap-tree-card summary strong{display:block;font-size:14px;color:var(--gray-800)}
+.mindmap-tree-card summary small{display:block;font-size:12px;color:var(--gray-500);line-height:1.65;margin-top:2px}
+.mindmap-tree-card ul{margin:0;padding:0 16px 12px 52px}
+.mindmap-tree-card li{font-size:13px;line-height:1.8;color:var(--gray-700);margin:2px 0}
+.mm-order{width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0}
+.mindmap-backup{border-top:1px solid var(--gray-200);padding:12px;background:var(--gray-50);max-height:260px;overflow:auto}
+.mindmap-fullscreen{position:fixed;z-index:9998;inset:18px;background:#fff;border:1px solid var(--gray-200);box-shadow:0 16px 50px rgba(15,23,42,.22);border-radius:var(--radius)}
+.mindmap-fullscreen .mindmap-tree-readable{min-height:calc(100vh - 150px)}
+.profile-mini-grid{display:grid;grid-template-columns:1fr;gap:4px;margin-top:6px}
+.profile-mini-grid span{font-size:11px;color:var(--gray-600);background:var(--gray-50);border:1px solid var(--gray-100);border-radius:6px;padding:4px 6px;line-height:1.45}
+
 /* Source code area */
 .mindmap-source{border-top:1px solid var(--gray-200);max-height:0;overflow:hidden;transition:max-height .3s ease;background:var(--gray-50)}
 .mindmap-source.expanded{max-height:180px;overflow-y:auto}
