@@ -38,7 +38,7 @@
 - 控制文件与当前实现持续对齐
 - Demo 数据与演示流程固化
 - 一键启动后的真实 API Key 联调
-- 答辩 PPT 正式文件制作
+- 答辩 PPT 正式文件制作 (`docs/presentation/中国软件杯A3_高数智能助教答辩.pptx`)
 - GitHub Actions 与本地 deep QA 持续对齐
 
 ## ⬜ 后续 P2/P3
@@ -52,7 +52,7 @@
 
 ## 🎯 答辩前必须完成
 - [x] 前端 Demo 页面
-- [ ] 答辩 PPT
+- [x] 答辩 PPT
 - [x] 演示脚本/流程初稿
 - [ ] Spark 连接实测
 - [ ] P0 smoke + deep QA 在答辩机器上通过
