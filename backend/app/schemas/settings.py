@@ -24,7 +24,7 @@ class LLMConfigRequest(BaseModel):
     api_key: str = Field(..., min_length=1)
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-v4-pro"
-    timeout_seconds: int = 60
+    timeout_seconds: int = 180
 
 
 class LLMTestRequest(BaseModel):

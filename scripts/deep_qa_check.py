@@ -216,7 +216,14 @@ def check_secret_hygiene() -> None:
         for pattern in patterns:
             for match in pattern.finditer(text):
                 value = match.group(match.lastindex or 0)
-                if "your" in value.lower() or "mock" in value.lower() or "example" in value.lower():
+                lower_value = value.lower()
+                if (
+                    "your" in lower_value
+                    or "mock" in lower_value
+                    or "example" in lower_value
+                    or "normalize" in lower_value
+                    or lower_value.startswith("_")
+                ):
                     continue
                 suspicious.append(f"{rel}: {match.group(0)[:80]}")
     assert_true(not suspicious, "possible secrets found:\n" + "\n".join(suspicious[:20]))

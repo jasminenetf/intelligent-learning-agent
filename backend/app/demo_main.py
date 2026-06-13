@@ -64,12 +64,24 @@ def _coerce_llm_timeout(value: Any = None) -> int:
     return max(MIN_LLM_TIMEOUT_SECONDS, min(MAX_LLM_TIMEOUT_SECONDS, seconds))
 
 
+def _normalize_spark_api_password(value: str | None) -> str:
+    """Allow users to paste either APIPassword or APIKey:APIPassword."""
+    raw = str(value or "").strip().strip('"').strip("'")
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].strip()
+    if ":" in raw:
+        left, right = raw.split(":", 1)
+        if left.strip() and right.strip():
+            return right.strip()
+    return raw
+
+
 STATE: dict[str, Any] = {
     "llm_provider": os.getenv("LLM_PROVIDER", "mock"),
     "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
     "deepseek_base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
-    "spark_api_key": os.getenv("SPARK_API_PASSWORD", os.getenv("SPARK_API_KEY", "")),
+    "spark_api_key": _normalize_spark_api_password(os.getenv("SPARK_API_PASSWORD", os.getenv("SPARK_API_KEY", ""))),
     "spark_base_url": os.getenv("SPARK_BASE_URL", "https://spark-api-open.xf-yun.com/v1"),
     "spark_model": os.getenv("SPARK_MODEL", "generalv3.5"),
     "llm_timeout_seconds": _coerce_llm_timeout(os.getenv("LLM_TIMEOUT_SECONDS", os.getenv("SPARK_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS))),
@@ -210,11 +222,11 @@ def _provider_config(provider: str) -> tuple[str, str, str]:
     if provider == "mock":
         return "mock", "", "", "mock"
     if provider == "spark":
-        return "spark", STATE["spark_api_key"], STATE["spark_base_url"], STATE["spark_model"]
+        return "spark", _normalize_spark_api_password(STATE["spark_api_key"]), STATE["spark_base_url"], STATE["spark_model"]
     if provider == "deepseek":
         return "deepseek", STATE["deepseek_api_key"], STATE["deepseek_base_url"], STATE["deepseek_model"]
     if STATE["spark_api_key"]:
-        return "spark", STATE["spark_api_key"], STATE["spark_base_url"], STATE["spark_model"]
+        return "spark", _normalize_spark_api_password(STATE["spark_api_key"]), STATE["spark_base_url"], STATE["spark_model"]
     if STATE["deepseek_api_key"]:
         return "deepseek", STATE["deepseek_api_key"], STATE["deepseek_base_url"], STATE["deepseek_model"]
     return "mock", "", "", "mock"
@@ -1332,9 +1344,10 @@ def save_llm_config(body: LLMConfigRequest):
     if provider not in {"spark", "deepseek"}:
         raise HTTPException(status_code=400, detail="provider must be spark or deepseek")
     if provider == "spark":
+        spark_password = _normalize_spark_api_password(body.api_key)
         STATE.update({
             "llm_provider": "spark",
-            "spark_api_key": body.api_key,
+            "spark_api_key": spark_password,
             "spark_base_url": body.base_url or "https://spark-api-open.xf-yun.com/v1",
             "spark_model": body.model or "generalv3.5",
             "llm_timeout_seconds": _coerce_llm_timeout(body.timeout_seconds),
@@ -1344,7 +1357,7 @@ def save_llm_config(body: LLMConfigRequest):
         _write_env({
             "LLM_PROVIDER": "spark",
             "SPARK_ENABLED": "true",
-            "SPARK_API_PASSWORD": STATE["spark_api_key"],
+            "SPARK_API_PASSWORD": _normalize_spark_api_password(STATE["spark_api_key"]),
             "SPARK_BASE_URL": STATE["spark_base_url"],
             "SPARK_MODEL": STATE["spark_model"],
             "SPARK_TIMEOUT_SECONDS": str(STATE["llm_timeout_seconds"]),

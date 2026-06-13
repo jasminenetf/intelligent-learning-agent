@@ -20,6 +20,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+MIN_LLM_TIMEOUT_SECONDS = 60
+DEFAULT_LLM_TIMEOUT_SECONDS = 180
+MAX_LLM_TIMEOUT_SECONDS = 600
+
+
+def _coerce_timeout(value: int | None) -> int:
+    try:
+        seconds = int(value if value else DEFAULT_LLM_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        seconds = DEFAULT_LLM_TIMEOUT_SECONDS
+    return max(MIN_LLM_TIMEOUT_SECONDS, min(MAX_LLM_TIMEOUT_SECONDS, seconds))
+
+
+def _normalize_spark_api_password(value: str | None) -> str:
+    raw = str(value or "").strip().strip('"').strip("'")
+    if raw.lower().startswith("bearer "):
+        raw = raw[7:].strip()
+    if ":" in raw:
+        left, right = raw.split(":", 1)
+        if left.strip() and right.strip():
+            return right.strip()
+    return raw
 
 
 def _read_env_lines() -> list[str]:
@@ -84,15 +106,19 @@ def api_save_llm_config(body: LLMConfigRequest):
     lines = _read_env_lines()
 
     if provider == "spark":
+        spark_password = _normalize_spark_api_password(body.api_key)
+        timeout = _coerce_timeout(body.timeout_seconds)
         updates = {
             "LLM_PROVIDER": provider,
             "SPARK_ENABLED": "true",
-            "SPARK_API_PASSWORD": body.api_key,
+            "SPARK_API_PASSWORD": spark_password,
             "SPARK_BASE_URL": body.base_url,
             "SPARK_MODEL": body.model,
+            "SPARK_TIMEOUT_SECONDS": str(timeout),
+            "LLM_TIMEOUT_SECONDS": str(timeout),
         }
     else:
-        timeout = body.timeout_seconds if body.timeout_seconds > 0 else 60
+        timeout = _coerce_timeout(body.timeout_seconds)
         updates = {
             "LLM_PROVIDER": provider,
             f"DEEPSEEK_API_KEY": body.api_key,
@@ -130,14 +156,15 @@ def api_save_llm_config(body: LLMConfigRequest):
             settings.DEEPSEEK_API_KEY = body.api_key
             settings.DEEPSEEK_BASE_URL = body.base_url
             settings.DEEPSEEK_MODEL = body.model
-            timeout = body.timeout_seconds if body.timeout_seconds > 0 else 60
+            timeout = _coerce_timeout(body.timeout_seconds)
             settings.DEEPSEEK_TIMEOUT_SECONDS = timeout
             settings.LLM_TIMEOUT_SECONDS = timeout
         elif provider == "spark":
             settings.SPARK_ENABLED = True
-            settings.SPARK_API_PASSWORD = body.api_key
+            settings.SPARK_API_PASSWORD = _normalize_spark_api_password(body.api_key)
             settings.SPARK_BASE_URL = body.base_url
             settings.SPARK_MODEL = body.model
+            settings.LLM_TIMEOUT_SECONDS = _coerce_timeout(body.timeout_seconds)
         reset_llm_provider()
     except Exception:
         pass
@@ -161,7 +188,7 @@ def api_test_llm(body: LLMTestRequest):
     req_provider = (body.provider or settings.LLM_PROVIDER).strip().lower()
 
     if req_provider == "spark":
-        spark_key = settings.SPARK_API_PASSWORD or settings.SPARK_API_KEY
+        spark_key = _normalize_spark_api_password(settings.SPARK_API_PASSWORD or settings.SPARK_API_KEY)
         if not spark_key:
             return LLMTestResponse(
                 ok=False, provider="spark",
@@ -191,7 +218,8 @@ def api_test_llm(body: LLMTestRequest):
     is_v4_pro = (provider_label == "deepseek" and model == "deepseek-v4-pro")
 
     try:
-        client = OpenAI(base_url=base_url, api_key=api_key, timeout=15, max_retries=1)
+        timeout = _coerce_timeout(getattr(settings, "LLM_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS))
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=1)
         t0 = time.time()
         resp = client.chat.completions.create(
             model=model,

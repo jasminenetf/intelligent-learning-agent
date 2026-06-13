@@ -1612,12 +1612,12 @@ async function loadSettings(){
     const sparkReady = d.spark_configured ? '已配置' : '未配置';
     const deepseekReady = d.deepseek_configured ? '已配置' : '未配置';
     const llmPanel =
-      '<div class="form-group"><label>科大讯飞 API Key / APIPassword</label><input id="spark-api-key" class="input" type="password" placeholder="直接填入科大讯飞 APIPassword"></div>' +
+      '<div class="form-group"><label>科大讯飞 APIPassword</label><input id="spark-api-key" class="input" type="password" placeholder="可填 APIPassword，或粘贴 APIKey:APIPassword"></div>' +
       '<div class="form-group"><label>科大讯飞 API 入口</label><input id="spark-base-url" class="input" value="' + esc(d.spark_base_url_configured ? (d.spark_base_url || sparkDefaults.base_url) : sparkDefaults.base_url) + '" placeholder="例如 https://spark-api-open.xf-yun.com/v1"></div>' +
       '<div class="form-group"><label>科大讯飞 模型名称</label><input id="spark-model" class="input" value="' + esc(d.spark_model || sparkDefaults.model) + '"></div>' +
       '<div class="form-group"><label>超时(秒)</label><input id="spark-timeout" class="input" type="number" min="60" max="600" value="180"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button class="btn btn-primary" onclick="_saveLlmProvider(\'spark\')">保存科大讯飞配置</button><button class="btn btn-outline" onclick="_testLlmProvider(\'spark\')">测试科大讯飞连接</button></div>' +
-      '<p id="spark-test-result" style="font-size:11px;color:var(--gray-400);margin-top:-6px;margin-bottom:16px">可直接填写科大讯飞 API；密钥不会回显。</p>' +
+      '<p id="spark-test-result" style="font-size:11px;color:var(--gray-400);margin-top:-6px;margin-bottom:16px">如果从控制台复制了 APIKey:APIPassword，可直接粘贴；系统会自动使用 APIPassword，密钥不会回显。</p>' +
       '<div class="form-group"><label>DeepSeek API Key</label><input id="deepseek-api-key" class="input" type="password" placeholder="输入 DeepSeek API Key"></div>' +
       '<div class="form-group"><label>DeepSeek Base URL</label><input id="deepseek-base-url" class="input" value="' + esc(deepseekDefaults.base_url) + '"></div>' +
       '<div class="form-group"><label>DeepSeek 模型名称</label><input id="deepseek-model" class="input" value="' + esc(d.llm_model || deepseekDefaults.model) + '"></div>' +
