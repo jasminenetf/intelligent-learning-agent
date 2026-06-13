@@ -160,7 +160,7 @@ def _run_demo_smoke(fails: list[str]) -> None:
             "top_k": 5,
         },
         demo_token,
-        timeout=45,
+        timeout=180,
     )
     if st == 200 and ask.get("ok") is True:
         ask_data = ask.get("data", {})
@@ -305,7 +305,7 @@ def main() -> int:
                     "top_k": 5,
                 },
                 token,
-                timeout=45,
+                timeout=180,
             )
             if st == 200 and ask.get("ok") is True:
                 ask_data = ask.get("data", {})

@@ -43,7 +43,7 @@ def run_cmd(args: list[str], timeout: int = 90) -> str:
     return proc.stdout.strip()
 
 
-def request_json(path: str, method: str = "GET", body: dict[str, Any] | None = None, timeout: int = 30) -> dict[str, Any]:
+def request_json(path: str, method: str = "GET", body: dict[str, Any] | None = None, timeout: int = 180) -> dict[str, Any]:
     data = None
     headers = {"Content-Type": "application/json"}
     if body is not None:
@@ -63,7 +63,7 @@ def request_json(path: str, method: str = "GET", body: dict[str, Any] | None = N
         raise QaFailure(f"{method} {path} returned non-json: {raw[:200]}") from exc
 
 
-def request_text(path: str, timeout: int = 30) -> str:
+def request_text(path: str, timeout: int = 60) -> str:
     try:
         with urllib.request.urlopen(BASE + path, timeout=timeout) as resp:
             return resp.read().decode("utf-8", errors="replace")
@@ -96,7 +96,7 @@ def check_p0_smoke() -> None:
         cwd=ROOT,
         text=True,
         capture_output=True,
-        timeout=90,
+        timeout=180,
         env=env,
     )
     if proc.returncode != 0 or "ALL CHECKS PASSED" not in proc.stdout:
@@ -110,7 +110,7 @@ def check_learning_loop() -> list[dict[str, Any]]:
             "/api/app/ask",
             "POST",
             {"course_id": 1, "question": QUESTION},
-            timeout=20,
+            timeout=180,
         )
     )
     items = (ask.get("resource_package") or {}).get("items") or []
@@ -133,7 +133,7 @@ def check_learning_loop() -> list[dict[str, Any]]:
                 "/api/app/generate",
                 "POST",
                 {"course_id": 1, "resource_type": typ, "topic": "函数极限的定义"},
-                timeout=20,
+                timeout=180,
             )
         )
         assert_true(res.get("download_url"), f"{typ} missing download_url")
@@ -165,7 +165,7 @@ def check_learning_loop() -> list[dict[str, Any]]:
             "knowledge_point": "函数极限",
             "explanation": "极限研究趋近过程，不要求该点函数值存在。",
         },
-        timeout=10,
+        timeout=60,
     )
     assert_true((wrong.get("mastery") or {}).get("mastery_score") == 0.48, "wrong answer mastery not updated")
     assert_true((wrong.get("detailed_feedback") or {}).get("correct_logic"), "wrong answer detailed feedback missing")
@@ -175,7 +175,7 @@ def check_learning_loop() -> list[dict[str, Any]]:
 
 def check_downloads(resources: list[dict[str, Any]]) -> None:
     for res in resources:
-        text = request_text(str(res["download_url"]), timeout=10)
+        text = request_text(str(res["download_url"]), timeout=60)
         typ = res.get("resource_type") or res.get("type")
         assert_true("Verifier" in text, f"{typ} download missing verifier section")
         assert_true("高数上.pdf" in text or "高等数学上册" in text, f"{typ} download missing course evidence")

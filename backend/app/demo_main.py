@@ -51,6 +51,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MIN_LLM_TIMEOUT_SECONDS = 60
+DEFAULT_LLM_TIMEOUT_SECONDS = 180
+MAX_LLM_TIMEOUT_SECONDS = 600
+
+
+def _coerce_llm_timeout(value: Any = None) -> int:
+    try:
+        seconds = int(value if value not in (None, "") else DEFAULT_LLM_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        seconds = DEFAULT_LLM_TIMEOUT_SECONDS
+    return max(MIN_LLM_TIMEOUT_SECONDS, min(MAX_LLM_TIMEOUT_SECONDS, seconds))
+
+
 STATE: dict[str, Any] = {
     "llm_provider": os.getenv("LLM_PROVIDER", "mock"),
     "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
@@ -59,7 +72,7 @@ STATE: dict[str, Any] = {
     "spark_api_key": os.getenv("SPARK_API_PASSWORD", os.getenv("SPARK_API_KEY", "")),
     "spark_base_url": os.getenv("SPARK_BASE_URL", "https://spark-api-open.xf-yun.com/v1"),
     "spark_model": os.getenv("SPARK_MODEL", "generalv3.5"),
-    "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", os.getenv("SPARK_TIMEOUT_SECONDS", "60"))),
+    "llm_timeout_seconds": _coerce_llm_timeout(os.getenv("LLM_TIMEOUT_SECONDS", os.getenv("SPARK_TIMEOUT_SECONDS", DEFAULT_LLM_TIMEOUT_SECONDS))),
     "course_id": 1,
     "course_name": "高等数学上册",
     "sessions": [],
@@ -414,8 +427,8 @@ def _call_llm(provider: str, question: str, model_override: str = "", max_tokens
         last_error = str(STATE.get("llm_last_error") or "真实模型暂不可用")
         return "mock", "mock", _mock_answer(question) + f"\n\n真实模型暂时不可用，已自动切换本地课程模式：{last_error[:120]}"
     try:
-        timeout = min(int(STATE["llm_timeout_seconds"] or 60), int(timeout_seconds or STATE["llm_timeout_seconds"] or 60))
-        client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0)
+        timeout = _coerce_llm_timeout(timeout_seconds or STATE.get("llm_timeout_seconds"))
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=1)
         resp = client.chat.completions.create(
             model=model,
             messages=[
@@ -691,7 +704,7 @@ def _llm_generate_mindmap(topic: str) -> dict[str, Any] | None:
         "所有内容必须直接围绕主题，不许写“当前学习主题”。"
         f"\n主题：{topic}"
     )
-    provider, model, answer = _call_llm("", prompt, max_tokens=700, timeout_seconds=35)
+    provider, model, answer = _call_llm("", prompt, max_tokens=700)
     parsed = _parse_json_object(answer)
     if provider == "mock" or not isinstance(parsed, dict):
         return None
@@ -737,7 +750,7 @@ def _llm_generate_lecture(topic: str) -> dict[str, Any] | None:
         "数学表达尽量清楚，答案适合高中/大学高数初学者复习。"
         f"\n主题：{topic}"
     )
-    provider, model, answer = _call_llm("", prompt, max_tokens=950, timeout_seconds=35)
+    provider, model, answer = _call_llm("", prompt, max_tokens=950)
     content = _strip_code_fence(answer)
     if provider == "mock" or len(content) < 120:
         return None
@@ -757,7 +770,7 @@ def _llm_generate_quiz(topic: str) -> dict[str, Any] | None:
         "answer用0-3数字。不要学习方法题。"
         f"\n主题：{topic}"
     )
-    provider, model, answer = _call_llm("", prompt, max_tokens=1100, timeout_seconds=10)
+    provider, model, answer = _call_llm("", prompt, max_tokens=1100)
     parsed = _parse_json_object(answer)
     if provider == "mock" or not parsed:
         return None
@@ -809,14 +822,14 @@ class LLMConfigRequest(BaseModel):
     api_key: str = Field(..., min_length=1)
     base_url: str = ""
     model: str = ""
-    timeout_seconds: int = 60
+    timeout_seconds: int = DEFAULT_LLM_TIMEOUT_SECONDS
 
 
 class LLMTestRequest(BaseModel):
     provider: str = ""
     model: str = ""
     message: str = "你好，请用一句话确认连接成功"
-    timeout_seconds: int = 18
+    timeout_seconds: int = DEFAULT_LLM_TIMEOUT_SECONDS
 
 
 class AskRequest(BaseModel):
@@ -1324,6 +1337,7 @@ def save_llm_config(body: LLMConfigRequest):
             "spark_api_key": body.api_key,
             "spark_base_url": body.base_url or "https://spark-api-open.xf-yun.com/v1",
             "spark_model": body.model or "generalv3.5",
+            "llm_timeout_seconds": _coerce_llm_timeout(body.timeout_seconds),
             "llm_failure_until": 0.0,
             "llm_last_error": "",
         })
@@ -1333,6 +1347,8 @@ def save_llm_config(body: LLMConfigRequest):
             "SPARK_API_PASSWORD": STATE["spark_api_key"],
             "SPARK_BASE_URL": STATE["spark_base_url"],
             "SPARK_MODEL": STATE["spark_model"],
+            "SPARK_TIMEOUT_SECONDS": str(STATE["llm_timeout_seconds"]),
+            "LLM_TIMEOUT_SECONDS": str(STATE["llm_timeout_seconds"]),
         })
     else:
         STATE.update({
@@ -1340,6 +1356,7 @@ def save_llm_config(body: LLMConfigRequest):
             "deepseek_api_key": body.api_key,
             "deepseek_base_url": body.base_url or "https://api.deepseek.com",
             "deepseek_model": body.model or "deepseek-v4-pro",
+            "llm_timeout_seconds": _coerce_llm_timeout(body.timeout_seconds),
             "llm_failure_until": 0.0,
             "llm_last_error": "",
         })
@@ -1348,8 +1365,8 @@ def save_llm_config(body: LLMConfigRequest):
             "DEEPSEEK_API_KEY": STATE["deepseek_api_key"],
             "DEEPSEEK_BASE_URL": STATE["deepseek_base_url"],
             "DEEPSEEK_MODEL": STATE["deepseek_model"],
-            "DEEPSEEK_TIMEOUT_SECONDS": str(body.timeout_seconds or 60),
-            "LLM_TIMEOUT_SECONDS": str(body.timeout_seconds or 60),
+            "DEEPSEEK_TIMEOUT_SECONDS": str(STATE["llm_timeout_seconds"]),
+            "LLM_TIMEOUT_SECONDS": str(STATE["llm_timeout_seconds"]),
         })
     return {"ok": True, "provider": provider, "saved": True, "applied": True}
 
@@ -1420,7 +1437,7 @@ def dashboard(course_id: int = 1):
 @app.post("/api/app/ask")
 def ask(body: AskRequest):
     question = body.question or body.message or "当前学习主题"
-    provider, model, answer = _call_llm("", question, timeout_seconds=8)
+    provider, model, answer = _call_llm("", question)
     profile = _update_demo_profile(question, "dialogue")
     ctx = _gaoshu_context(question)
     if provider != "mock":
