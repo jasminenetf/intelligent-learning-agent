@@ -26,6 +26,7 @@ const S = {
   currentResourcePackage: null,
   llmProvider: '',
   llmModel: '',
+  modelStatusLabel: '',
   autoArtifactTopicKey: '',
   autoArtifactRunning: false,
   mermaidZoom: 1.35,
@@ -307,13 +308,49 @@ function updateTopbar(){
   if (c) c.textContent = S.courseName || '未选择';
   if (b) {
     b.className = 'topbar-badge ok';
-    if (S.llmProvider === 'spark') b.textContent = 'Spark';
-    else if (S.llmProvider === 'deepseek') b.textContent = 'DeepSeek';
-    else if (S.llmProvider === 'mock') b.textContent = 'Mock';
-    else b.textContent = '免登录';
+    b.textContent = S.modelStatusLabel || '免登录';
   }
   if (sf) sf.innerHTML = '<span class="status-dot online"></span> 免登录可用';
   if (t) t.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
+}
+
+function _publicModelStatus(data){
+  const ms = (data && data.model_status) || {};
+  if (ms.label) return ms.label;
+  const provider = String((data && data.provider) || S.llmProvider || '').toLowerCase();
+  if (provider === 'spark') return 'Spark 真实生成';
+  if ((data && data.fallback_used) || provider === 'mock') return '本地演示模板生成';
+  return '本地演示模板生成';
+}
+
+function _verificationPanelHtml(data){
+  const v = (data && data.verification) || {};
+  const grounding = (data && data.grounding) || {};
+  const coverage = v.citation_coverage !== undefined ? v.citation_coverage : grounding.grounding_score;
+  const coverageLabel = coverage !== undefined && coverage !== null ? Math.round(Number(coverage) * 100) + '%' : '待检查';
+  const supported = v.supported_claim_count !== undefined ? v.supported_claim_count : '待检查';
+  const unsupported = Array.isArray(v.unsupported_claims) ? v.unsupported_claims : (Array.isArray(grounding.unsupported_claims) ? grounding.unsupported_claims : []);
+  const risk = v.risk_level || grounding.risk_level || 'medium';
+  return '<div class="course-card" style="margin-top:6px"><h4 style="font-size:12px">Verifier 引用覆盖检查</h4>' +
+    '<div class="course-meta"><span>引用覆盖率 ' + esc(coverageLabel) + '</span><span>支持断言数 ' + esc(String(supported)) + '</span></div>' +
+    '<div class="course-meta"><span>无依据断言 ' + esc(String(v.unsupported_claim_count !== undefined ? v.unsupported_claim_count : unsupported.length)) + '</span><span>风险等级 ' + esc(risk) + '</span></div>' +
+    (unsupported.length ? '<div class="course-meta"><span>' + esc(unsupported.slice(0, 3).join(' · ')) + '</span></div>' : '') +
+    '</div>';
+}
+
+function _ragStatusPanelHtml(data){
+  const r = (data && data.rag_status) || {};
+  const enabled = r.course_references_enabled !== false;
+  const mode = r.retrieval_mode || 'ChromaDB course-filtered vector search';
+  const embedding = r.embedding_provider || ((r.embedding_status || {}).embedding_provider) || 'hash_mock';
+  return '<div class="course-card" style="margin-top:6px"><h4 style="font-size:12px">RAG 检索状态</h4>' +
+    '<div class="course-meta"><span>' + (enabled ? '课程引用已启用' : '课程引用未启用') + '</span><span>检索模式 ' + esc(mode) + '</span></div>' +
+    '<div class="course-meta"><span>embedding provider ' + esc(embedding) + '</span><span>匹配片段 ' + esc(String(r.matched_chunks !== undefined ? r.matched_chunks : ((data.citations || []).length))) + '</span></div>' +
+    '</div>';
+}
+
+function _resourceGenerationLabel(item){
+  return _publicModelStatus(item || {});
 }
 
 const PAGE_LOADERS = {
@@ -376,6 +413,7 @@ async function bootstrap(){
     if (st.ok && st.data) {
       S.llmProvider = st.data.llm_provider || '';
       S.llmModel = st.data.llm_model || '';
+      S.modelStatusLabel = _publicModelStatus(st.data);
     }
   } catch (_) {}
   try {
@@ -392,6 +430,9 @@ async function bootstrap(){
       }
       if (payload.config && payload.config.llm_configured === false) {
         toast('请先配置模型服务', 'info');
+      }
+      if (payload.config) {
+        S.modelStatusLabel = _publicModelStatus(payload.config);
       }
       updateTopbar();
       const step = payload.next_step || 'start_learning';
@@ -542,15 +583,12 @@ function _renderAskSidebar(data){
   const refs = data.citations || [];
   const citePanel = document.getElementById('citations-panel');
   if (citePanel) {
-    const grounding = data.grounding || {};
     const safety = data.content_safety || {};
-    const groundingScore = data.grounding_score !== undefined && data.grounding_score !== null ? Math.round(Number(data.grounding_score) * 100) : null;
-    const unsupported = Array.isArray(grounding.unsupported_claims) ? grounding.unsupported_claims : [];
     citePanel.innerHTML = '<h4>📚 课程依据</h4>' +
-      (groundingScore !== null ? '<div class="course-meta"><span>引用覆盖率 ' + groundingScore + '%</span><span>风险等级 ' + esc(grounding.risk_level || 'low') + '</span></div>' : '') +
-      (grounding.message ? '<div class="course-meta"><span>' + esc(grounding.message) + '</span></div>' : '') +
+      '<div class="course-meta"><span>' + esc(_publicModelStatus(data)) + '</span></div>' +
+      _verificationPanelHtml(data) +
+      _ragStatusPanelHtml(data) +
       (safety && (safety.safe !== undefined) ? '<div class="course-meta"><span>内容安全 ' + (safety.safe ? '通过' : '需注意') + '</span><span>' + esc((safety.risk_flags || []).join(' · ') || '无风险标记') + '</span></div>' : '') +
-      (unsupported.length ? '<div class="course-card" style="margin-top:6px"><h4 style="font-size:12px">无依据提示</h4><div class="course-meta"><span>' + esc(unsupported.join(' · ')) + '</span></div></div>' : '') +
       (refs.length ? refs.map(x => {
         const label = typeof x === 'string' ? x : (x.source || x.chunk_id || '课程片段');
         const page = (x && x.page_number) ? ' p.' + x.page_number : '';
@@ -563,8 +601,9 @@ function _renderAskSidebar(data){
   const agentViz = document.getElementById('agent-viz');
   const traces = data.agent_traces || [];
   if (agentViz) {
-    const scoreLine = data.verifier_score !== undefined && data.verifier_score !== null
-      ? '<div class="course-meta"><span>校验置信度 ' + Math.round(Number(data.verifier_score) * 100) + '%</span><span>grounding ' + (data.grounding_score !== undefined ? Math.round(Number(data.grounding_score) * 100) + '%' : '—') + '</span></div>'
+    const verification = data.verification || {};
+    const scoreLine = verification.citation_coverage !== undefined || (data.verifier_score !== undefined && data.verifier_score !== null)
+      ? '<div class="course-meta"><span>引用覆盖率 ' + Math.round(Number(verification.citation_coverage !== undefined ? verification.citation_coverage : data.verifier_score) * 100) + '%</span><span>风险等级 ' + esc(verification.risk_level || 'medium') + '</span></div>'
       : '';
     const normalizedTraces = traces.map(function(t, idx){
       return {
@@ -580,32 +619,30 @@ function _renderAskSidebar(data){
       : '<p style="font-size:11px;color:var(--gray-400)">协作轨迹将在问答后显示</p>');
   }
   const profileMini = document.getElementById('profile-mini');
-  const sp = data.student_profile || {};
+  const sp = _normalizeProfile(data.student_profile || data || {});
   if (profileMini) {
-    const mastery = data.mastery_overview || {};
-    const masteryLine = mastery.avg_mastery !== undefined ? '<div class="course-meta"><span>平均掌握度 ' + Math.round(Number(mastery.avg_mastery || 0) * 100) + '%</span><span>强项 ' + esc((mastery.strong_points || []).slice(0,2).join(' · ') || '暂无') + '</span></div>' : '';
-    if (sp.knowledge_level || sp.learning_goal || masteryLine) {
-      const weak = _parseJsonList(sp.weak_points).slice(0, 3).join(' · ') || '待识别';
-      const prefs = _parseJsonList(sp.resource_preference).slice(0, 4).map(resourceLabel).join(' · ') || '待识别';
-      profileMini.innerHTML = '<h4>🎓 学习画像</h4>' +
+    const dims = _profileDimensions(sp);
+    const weak = _profileValueText(dims['薄弱知识点']);
+    const prefs = _profileValueText(dims['资源偏好']);
+    const updated = _profileUpdatedText(sp);
+    profileMini.innerHTML = '<h4>🎓 对话式学习画像</h4>' +
         '<div class="profile-mini-grid">' +
-          '<span>基础：' + esc(sp.knowledge_level || '—') + '</span>' +
-          '<span>目标：' + esc(sp.learning_goal || '—') + '</span>' +
-          '<span>风格：' + esc(sp.cognitive_style || '—') + '</span>' +
+          '<span>版本：#' + esc(String(sp.profile_version || 1)) + '</span>' +
           '<span>薄弱：' + esc(weak) + '</span>' +
           '<span>偏好：' + esc(prefs) + '</span>' +
-          '<span>信心：' + esc(sp.emotion_tendency || '—') + '</span>' +
+          '<span>风格：' + esc(_profileValueText(dims['认知风格'])) + '</span>' +
+          '<span>建议：' + esc(sp.next_recommendation || '先复习薄弱点，再做同主题练习') + '</span>' +
         '</div>' +
-        '<div class="course-meta" style="margin-top:6px"><span>证据：' + esc((sp.raw_evidence || '').slice(0, 42) || '最近对话与测验行为') + '</span><span>置信度 ' + Math.round(Number(sp.profile_confidence || 0) * 100) + '%</span></div>' +
-        masteryLine + '<button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="navTo(\'profile\')">查看画像中心</button>';
-    }
+        (updated ? '<div class="course-meta" style="margin-top:6px"><span>本轮更新：' + esc(updated) + '</span></div>' : '') +
+        '<div class="course-meta" style="margin-top:6px"><span>动态证据：提问、练习、错题和资源使用</span><span>置信度 ' + Math.round(Number(sp.profile_confidence || 0) * 100) + '%</span></div>' +
+        '<button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="navTo(\'profile\')">查看画像中心</button>';
   }
   const packagePanel = document.getElementById('resource-package-panel');
   if (packagePanel && data.resource_package) {
     const rp = data.resource_package;
     const items = Array.isArray(rp.items) ? rp.items : [];
     packagePanel.innerHTML = '<h4>📦 个性化学习资源包</h4><div class="course-meta"><span>' + esc(rp.title || rp.topic || '资源包') + '</span><span>资源 ' + (rp.item_count || 0) + ' 项</span><span>智能体 ' + (rp.agent_count || 0) + ' 个</span></div>' +
-      '<div class="course-meta"><span>grounding ' + Math.round(Number(rp.grounding_score || 0) * 100) + '%</span><span>风险 ' + esc(rp.risk_level || 'low') + '</span><span>安全 ' + ((rp.content_safe !== false) ? '通过' : '需注意') + '</span></div>' +
+      '<div class="course-meta"><span>引用覆盖率 ' + Math.round(Number(rp.grounding_score || 0) * 100) + '%</span><span>风险等级 ' + esc(rp.risk_level || 'low') + '</span><span>安全 ' + ((rp.content_safe !== false) ? '通过' : '需注意') + '</span></div>' +
       (rp.summary ? '<div class="course-meta"><span>' + esc(rp.summary) + '</span></div>' : '') +
       (items.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + items.map(it => '<span class="lr-chip">' + esc((it.type || 'item') + ' · ' + (it.title || '资源')) + '</span>').join('') + '</div>' : '') +
       '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="showResourcePackageDetail()">查看详情</button><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看资源中心</button><button class="btn btn-sm btn-outline" onclick="quickGenerateFromChat(&quot;study_plan&quot;, ' + jsAttrArg(rp.topic || rp.title || '') + ')">生成学习路径</button></div>';
@@ -635,7 +672,7 @@ function _resourcePackageDetailHtml(rp){
   const steps = items.length ? items.map(function(it, i){ return '<div class="course-card"><h4>' + (i + 1) + '. ' + esc(it.title || it.type || '学习资源') + '</h4><div class="course-meta"><span>' + esc(it.type || 'resource') + '</span><span>' + esc(it.reason || it.usage || '用于当前主题的个性化学习') + '</span></div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="quickGenerateFromChat(' + jsAttrArg(it.type || 'lecture_doc') + ', ' + jsAttrArg(topic) + ')">打开/生成</button></div></div>'; }).join('') : '<div class="empty-state"><div class="empty-icon">📦</div><p>资源包暂无资源项</p></div>';
   return '<div class="card"><div class="card-header"><h3>📦 个性化资源包详情</h3><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">继续生成</button></div>' +
     '<div class="course-card"><h4>' + esc(rp.title || topic) + '</h4><div class="course-meta"><span>主题 ' + esc(topic) + '</span><span>资源 ' + (rp.item_count || items.length) + ' 项</span><span>智能体 ' + (rp.agent_count || 0) + ' 个</span></div>' +
-    '<div class="course-meta"><span>grounding ' + Math.round(Number(rp.grounding_score || 0) * 100) + '%</span><span>风险 ' + esc(rp.risk_level || 'low') + '</span><span>安全 ' + ((rp.content_safe !== false) ? '通过' : '需注意') + '</span></div>' +
+    '<div class="course-meta"><span>引用覆盖率 ' + Math.round(Number(rp.grounding_score || 0) * 100) + '%</span><span>风险等级 ' + esc(rp.risk_level || 'low') + '</span><span>安全 ' + ((rp.content_safe !== false) ? '通过' : '需注意') + '</span></div>' +
     (rp.summary ? '<p style="font-size:13px;line-height:1.7;color:var(--gray-600);margin-top:8px">' + esc(rp.summary) + '</p>' : '') + '</div>' +
     '<div class="grid grid-2"><div class="card"><div class="card-header"><h3>推荐学习顺序</h3></div>' + steps + '</div>' +
     '<div class="card"><div class="card-header"><h3>适配说明</h3></div><div class="course-card"><h4>画像适配</h4><div class="course-meta"><span>根据问答内容、学习画像、掌握度和课程资料生成</span></div></div><div class="course-card"><h4>可信校验</h4><div class="course-meta"><span>引用覆盖率、风险等级、内容安全共同决定资源包质量提示</span></div></div><div class="course-card"><h4>下一步</h4><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="quickGenerateFromChat(&quot;study_plan&quot;, ' + jsAttrArg(topic) + ')">生成学习路径</button><button class="btn btn-sm btn-outline" onclick="navTo(\'learning-report\')">查看学习报告</button></div></div></div></div></div>';
@@ -1254,7 +1291,7 @@ function renderResourceJobResults(resources){
     const type = _resourceTypeOf(r);
     const title = r.title || resourceLabel(type);
     const fname = title + _resourceFileExt(type);
-    const auditMeta = '<div class="course-meta"><span>Provider ' + esc(r.provider || r.generated_by || 'mock_curriculum') + '</span><span>Model ' + esc(r.model || 'mock_curriculum') + '</span><span>Fallback ' + esc(String(!!r.fallback_used)) + '</span><span>RAG ' + esc(String(!!r.used_rag)) + '</span><span>画像 ' + esc(String(!!r.used_profile)) + '</span><span>引用片段 ' + esc(String((r.context_chunks || r.evidence || []).length || 0)) + '</span></div>';
+    const auditMeta = '<div class="course-meta"><span>' + esc(_resourceGenerationLabel(r)) + '</span><span>' + (r.used_rag ? '课程引用已启用' : '本地材料模板') + '</span><span>画像适配 ' + (r.used_profile ? '已启用' : '未启用') + '</span><span>引用片段 ' + esc(String((r.context_chunks || r.evidence || []).length || 0)) + '</span></div>';
     return '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>' + esc(resourceLabel(type)) + '</span><span>质量 ' + esc(String(r.quality_score || '—')) + '</span></div>' + auditMeta +
       (r.question ? '<p style="font-size:12px;color:var(--gray-500);margin-top:6px">问题：' + esc(r.question) + '</p>' : '') +
       '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
@@ -1435,10 +1472,9 @@ function _resourceFileCards(files){
     meta.push('<span>' + esc(f.status === 'completed' ? '已生成' : (f.status || '可用')) + '</span>');
     if (course) meta.push('<span>课程 ' + esc(course) + '</span>');
     if (createdAt) meta.push('<span>' + esc(String(createdAt).slice(0, 19).replace('T', ' ')) + '</span>');
-    meta.push('<span>Provider ' + esc(f.provider || f.generated_by || 'mock_curriculum') + '</span>');
-    meta.push('<span>Fallback ' + esc(String(!!f.fallback_used)) + '</span>');
-    meta.push('<span>RAG ' + esc(String(!!f.used_rag)) + '</span>');
-    meta.push('<span>画像 ' + esc(String(!!f.used_profile)) + '</span>');
+    meta.push('<span>' + esc(_resourceGenerationLabel(f)) + '</span>');
+    meta.push('<span>' + (f.used_rag ? '课程引用已启用' : '本地材料模板') + '</span>');
+    meta.push('<span>画像适配 ' + (f.used_profile ? '已启用' : '未启用') + '</span>');
     meta.push('<span>引用片段 ' + esc(String((f.context_chunks || f.evidence || []).length || 0)) + '</span>');
     const rid = esc(f.resource_id);
     const oname = esc(origin);
@@ -1589,11 +1625,40 @@ async function generateWrongBookReviewPath(topic){
   await joinReviewPlan(kp, 'study_plan');
 }
 
+function _validMasteryScores(masteryItems){
+  return (masteryItems || []).map(function(m){
+    const v = Number(m && m.mastery_score);
+    return Number.isFinite(v) && v >= 0 ? Math.max(0, Math.min(1, v)) : null;
+  }).filter(function(v){ return v !== null; });
+}
+
+function _formatMasteryLabel(masteryOverview, masteryItems){
+  const overview = masteryOverview || {};
+  const scores = _validMasteryScores(masteryItems || []);
+  if (overview.has_data === false || (scores.length === 0 && (overview.avg_mastery === null || overview.avg_mastery === undefined || overview.average_score === null))) {
+    return '待测评';
+  }
+  const raw = overview.avg_mastery !== undefined && overview.avg_mastery !== null ? overview.avg_mastery : (overview.average_score !== undefined ? overview.average_score : (scores.length ? scores.reduce(function(a, b){ return a + b; }, 0) / scores.length : null));
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.round(Math.max(0, Math.min(1, value)) * 100) + '%' : '待测评';
+}
+
+function _reportCount(report, key, fallback){
+  const stats = (report && report.stats) || {};
+  const value = stats[key] !== undefined ? stats[key] : (report && report[key] !== undefined ? report[key] : fallback);
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function _learningReportInsights(report, wrongItems, bookmarks, audits, masteryItems, accuracy, rate){
-  const avgMastery = Math.round(((report.mastery_overview || {}).avg_mastery || 0) * 100);
-  const high = masteryItems.filter(m => Number(m.mastery_score || 0) >= 0.75).length;
-  const mid = masteryItems.filter(m => Number(m.mastery_score || 0) >= 0.45 && Number(m.mastery_score || 0) < 0.75).length;
-  const low = masteryItems.filter(m => Number(m.mastery_score || 0) < 0.45).length;
+  const scores = _validMasteryScores(masteryItems);
+  const avgMasteryLabel = _formatMasteryLabel(report.mastery_overview || {}, masteryItems);
+  const avgMasteryForTrend = scores.length ? Math.round((scores.reduce(function(a, b){ return a + b; }, 0) / scores.length) * 100) : rate;
+  const high = scores.filter(v => v >= 0.75).length;
+  const mid = scores.filter(v => v >= 0.45 && v < 0.75).length;
+  const low = scores.filter(v => v < 0.45).length;
+  const bookmarkCount = _reportCount(report, 'bookmark_count', bookmarks.length);
+  const wrongCount = _reportCount(report, 'wrong_count', wrongItems.length);
   const wrongMap = {};
   wrongItems.forEach(function(w){
     const k = w.knowledge_point || w.topic || '未归类';
@@ -1604,15 +1669,15 @@ function _learningReportInsights(report, wrongItems, bookmarks, audits, masteryI
     const width = Math.min(100, n * 24);
     return '<div class="course-card"><h4>' + esc(k) + '</h4><div style="height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden"><div style="height:100%;width:' + width + '%;background:var(--warning)"></div></div><div class="course-meta" style="margin-top:6px"><span>错题 ' + n + ' 道</span></div></div>';
   }).join('') || '<div class="empty-state"><div class="empty-icon">🧯</div><p>暂无错题分布</p></div>';
-  const trend = [Math.max(0, rate - 12), Math.max(0, rate - 6), rate, accuracy !== null ? accuracy : avgMastery].map(function(v, i){
+  const trend = [Math.max(0, rate - 12), Math.max(0, rate - 6), rate, accuracy !== null ? accuracy : avgMasteryForTrend].map(function(v, i){
     const h = Math.max(8, Math.min(100, Number(v) || 0));
     return '<div style="flex:1;text-align:center"><div style="height:92px;display:flex;align-items:end;justify-content:center"><div style="width:22px;height:' + h + '%;border-radius:999px;background:linear-gradient(180deg,var(--primary),var(--success))"></div></div><div style="font-size:11px;color:var(--gray-500);margin-top:4px">' + ['起点','上次','当前','测验'][i] + '</div></div>';
   }).join('');
   return '<div class="lr-section"><div class="lr-section-title">学习效果趋势</div><div class="grid grid-2">' +
     '<div class="course-card"><h4>正确率 / 完成率趋势</h4><div style="display:flex;gap:8px;align-items:end;margin-top:8px">' + trend + '</div><div class="course-meta" style="margin-top:8px"><span>当前完成率 ' + rate + '%</span><span>测验正确率 ' + (accuracy !== null ? accuracy + '%' : '待测') + '</span></div></div>' +
-    '<div class="course-card"><h4>掌握度分布</h4><div class="lr-chips" style="margin-top:8px"><span class="lr-chip">高掌握 ' + high + '</span><span class="lr-chip">中等 ' + mid + '</span><span class="lr-chip">需复盘 ' + low + '</span></div><div class="course-meta" style="margin-top:8px"><span>平均掌握度 ' + avgMastery + '%</span><span>资源收藏 ' + bookmarks.length + '</span></div></div>' +
+    '<div class="course-card"><h4>掌握度分布</h4><div class="lr-chips" style="margin-top:8px"><span class="lr-chip">高掌握 ' + high + '</span><span class="lr-chip">中等 ' + mid + '</span><span class="lr-chip">需复盘 ' + low + '</span></div><div class="course-meta" style="margin-top:8px"><span>平均掌握度 ' + avgMasteryLabel + '</span><span>资源收藏 ' + bookmarkCount + '</span></div></div>' +
     '</div></div>' +
-    '<div class="lr-section"><div class="lr-section-title">错题与资源使用</div><div class="grid grid-2"><div>' + wrongBars + '</div><div class="course-card"><h4>本周学习摘要</h4><div class="course-meta"><span>行为记录 ' + audits.length + ' 条</span><span>收藏资源 ' + bookmarks.length + ' 个</span><span>待复盘错题 ' + wrongItems.length + ' 道</span></div><p style="font-size:13px;line-height:1.7;color:var(--gray-600);margin-top:8px">建议优先复盘低掌握度知识点，再生成讲义、导图和巩固练习，最后回到学习报告查看掌握度变化。</p></div></div></div>';
+    '<div class="lr-section"><div class="lr-section-title">错题与资源使用</div><div class="grid grid-2"><div>' + wrongBars + '</div><div class="course-card"><h4>本周学习摘要</h4><div class="course-meta"><span>行为记录 ' + audits.length + ' 条</span><span>收藏资源 ' + bookmarkCount + ' 个</span><span>待复盘错题 ' + wrongCount + ' 道</span></div><p style="font-size:13px;line-height:1.7;color:var(--gray-600);margin-top:8px">建议优先复盘低掌握度知识点，再生成讲义、导图和巩固练习，最后回到学习报告查看掌握度变化。</p></div></div></div>';
 }
 
 async function loadLearningReportPage(){
@@ -1639,6 +1704,9 @@ async function loadLearningReportPage(){
     const accuracy = report.accuracy !== undefined ? Math.round((report.accuracy || 0) * 100) : null;
     const masteryOverview = report.mastery_overview || {};
     const masteryItems = report.mastery_items || [];
+    const masteryLabel = _formatMasteryLabel(masteryOverview, masteryItems);
+    const wrongCount = _reportCount(report, 'wrong_count', wrongItems.length);
+    const bookmarkCount = _reportCount(report, 'bookmark_count', bookmarks.length);
     const activityCards = audits.length ? audits.slice(0,5).map(a => '<div class="course-card"><h4>🧾 ' + esc(a.action || '行为记录') + '</h4><div class="course-meta"><span>' + esc(a.detail || '') + '</span></div></div>').join('') : '<div class="empty-state"><div class="empty-icon">🧾</div><p>暂无行为记录</p></div>';
     const actionCards = nextActions.length ? nextActions.map(a =>
       '<div class="course-card"><h4>' + esc(a.title || '下一步') + '</h4><div class="course-meta"><span>' + esc(a.detail || '') + '</span></div><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
@@ -1646,17 +1714,17 @@ async function loadLearningReportPage(){
       '</div></div>'
     ).join('') : '<div class="course-card"><h4>' + esc(progress.next_recommendation || '先完成一次问答或测验，系统会给出下一步推荐') + '</h4></div>';
     const masterySection = masteryItems.length ? '<div class="lr-section"><div class="lr-section-title">知识点掌握度</div><div style="display:grid;gap:8px">' + masteryItems.slice(0,8).map(function(m){
-      const score = Math.max(0, Math.min(100, Math.round((m.mastery_score || 0) * 100)));
+      const score = Math.max(0, Math.min(100, Math.round(Number(m.mastery_score || 0) * 100)));
       return '<div class="course-card"><h4>' + esc(m.knowledge_point || '知识点') + '</h4><div style="height:8px;background:var(--gray-200);border-radius:999px;overflow:hidden"><div style="height:100%;width:' + score + '%;background:linear-gradient(90deg,var(--primary),var(--success))"></div></div><div class="course-meta" style="margin-top:6px"><span>掌握度 ' + score + '%</span><span>' + esc(m.recommended_action || '') + '</span></div></div>';
-    }).join('') + '</div><div class="course-meta" style="margin-top:8px"><span>平均掌握度 ' + Math.round((masteryOverview.avg_mastery || 0) * 100) + '%</span></div></div>' : '';
+    }).join('') + '</div><div class="course-meta" style="margin-top:8px"><span>平均掌握度 ' + masteryLabel + '</span></div></div>' : '<div class="lr-section"><div class="lr-section-title">知识点掌握度</div><div class="empty-state"><div class="empty-icon">📊</div><p>待测评</p></div></div>';
     const insightSection = _learningReportInsights(report, wrongItems, bookmarks, audits, masteryItems, accuracy, rate);
     el.innerHTML = '<div class="card"><div class="card-header"><h3>学习报告</h3><button class="btn btn-sm btn-outline" onclick="loadLearningReportPage()">🔄 刷新</button></div>' +
       '<div class="lr-summary">' +
       '<div class="lr-stat"><span class="lr-stat-value">' + rate + '%</span><span class="lr-stat-label">完成率</span></div>' +
-      '<div class="lr-stat"><span class="lr-stat-value">' + wrongItems.length + '</span><span class="lr-stat-label">错题数</span></div>' +
-      '<div class="lr-stat"><span class="lr-stat-value">' + bookmarks.length + '</span><span class="lr-stat-label">收藏数</span></div>' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + wrongCount + '</span><span class="lr-stat-label">错题数</span></div>' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + bookmarkCount + '</span><span class="lr-stat-label">收藏数</span></div>' +
       (accuracy !== null ? '<div class="lr-stat"><span class="lr-stat-value">' + accuracy + '%</span><span class="lr-stat-label">测验正确率</span></div>' : '') +
-      '<div class="lr-stat"><span class="lr-stat-value">' + Math.round((masteryOverview.avg_mastery || 0) * 100) + '%</span><span class="lr-stat-label">平均掌握度</span></div>' +
+      '<div class="lr-stat"><span class="lr-stat-value">' + masteryLabel + '</span><span class="lr-stat-label">平均掌握度</span></div>' +
       '</div>' +
       '<div class="lr-section"><div class="lr-section-title">画像驱动建议</div>' + actionCards +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-sm btn-primary" onclick="navTo(\'assistant\')">继续提问</button><button class="btn btn-sm btn-outline" onclick="navTo(\'generator\')">生成资源</button><button class="btn btn-sm btn-outline" onclick="navTo(\'wrong-book\')">复盘错题</button><button class="btn btn-sm btn-outline" onclick="navTo(\'resource-center\')">查看收藏资源</button></div></div>' +
@@ -1710,6 +1778,7 @@ async function loadSettings(){
     const d = (r.ok && r.data) ? r.data : {};
     S.llmProvider = d.llm_provider || S.llmProvider;
     S.llmModel = d.llm_model || S.llmModel;
+    S.modelStatusLabel = _publicModelStatus(d);
     updateTopbar();
     const sparkDefaults = _providerDefaults('spark');
     const deepseekDefaults = _providerDefaults('deepseek');
@@ -1736,16 +1805,17 @@ async function loadSettings(){
       '<div class="form-group"><label>权限状态</label><input readonly value="已开放全部设置"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="navTo(\'dashboard\')">进入系统</button><button class="btn btn-outline" onclick="loadSettings()">刷新状态</button></div></div>' +
       '<div class="card"><div class="card-header"><h3>推理引擎配置</h3></div>' +
-      '<div class="course-card"><h4>当前：<span id="llm-provider">' + esc(d.llm_provider || '未配置') + '</span></h4><div class="course-meta"><span>模型 ' + esc(d.llm_model || '未知') + '</span><span>' + (d.is_mock ? '本地演示兜底 Mock' : '在线模型链路') + '</span></div><div class="course-meta"><span>星火：' + sparkReady + '</span><span>DeepSeek：' + deepseekReady + '</span><span>Fallback：' + esc(d.fallback_provider || 'mock') + '</span></div></div>' + llmPanel + '</div></div>' +
+      '<div class="course-card"><h4>当前：<span id="llm-provider">' + esc(_publicModelStatus(d)) + '</span></h4><div class="course-meta"><span>星火：' + sparkReady + '</span><span>本地兜底：可用</span></div></div>' + llmPanel + '</div></div>' +
       '<div class="card" style="margin-top:12px"><div class="card-header"><h3>系统状态</h3></div>' +
-      '<div class="grid grid-3"><div class="card grid-stat"><div class="val">' + (d.spark_configured ? '✓' : '—') + '</div><div class="lbl">Spark</div></div>' +
-      '<div class="card grid-stat"><div class="val">' + (d.deepseek_configured ? '✓' : '—') + '</div><div class="lbl">DeepSeek</div></div>' +
-      '<div class="card grid-stat"><div class="val">' + (d.fallback_available ? '✓' : '—') + '</div><div class="lbl">Fallback</div></div></div>' +
+      '<div class="grid grid-3"><div class="card grid-stat"><div class="val">' + (d.spark_configured ? '✓' : '—') + '</div><div class="lbl">Spark API</div></div>' +
+      '<div class="card grid-stat"><div class="val">✓</div><div class="lbl">本地兜底</div></div>' +
+      '<div class="card grid-stat"><div class="val">' + (d.course_references_enabled !== false ? '✓' : '—') + '</div><div class="lbl">课程引用</div></div></div>' +
       '<div class="grid grid-3" style="margin-top:12px"><div class="card grid-stat"><div class="val">' + esc(String(d.chunks_count || 0)) + '</div><div class="lbl">知识片段</div></div>' +
       '<div class="card grid-stat"><div class="val">' + esc(String(d.vector_count || 0)) + '</div><div class="lbl">Chroma 向量</div></div>' +
       '<div class="card grid-stat"><div class="val">' + esc(d.knowledge_base_status || 'unknown') + '</div><div class="lbl">知识库状态</div></div></div>' +
-      '<div class="course-card" style="margin-top:12px"><h4>问答模式</h4><div class="course-meta"><span>SSE 流式 ' + (S.useStreamAsk ? '已开启' : '已关闭') + '</span><span>课程：' + esc(d.course_name || S.courseName || '高等数学上册') + '</span><span>Embedding：' + esc(d.embedding_provider || 'hash_mock') + '</span></div>' +
-      '<p style="font-size:12px;color:var(--danger);margin-top:8px">' + esc(d.embedding_note || 'hash_mock 仅用于流程验证，不代表真实语义向量效果') + '</p></div></div>';
+      '<div class="course-card" style="margin-top:12px"><h4>问答模式</h4><div class="course-meta"><span>SSE 流式 ' + (S.useStreamAsk ? '已开启' : '已关闭') + '</span><span>课程：' + esc(d.course_name || S.courseName || '高等数学上册') + '</span></div></div>' +
+      _ragStatusPanelHtml({ rag_status: d.rag_status || { course_references_enabled: d.course_references_enabled, retrieval_mode: d.retrieval_mode, embedding_provider: d.embedding_provider } }) +
+      '</div>';
   } catch (e) {
     _showPageError(el, '设置加载失败', e.message || '未知错误');
   }
@@ -1791,7 +1861,7 @@ async function _testLlmProvider(provider){
     });
     const d = (r.ok && r.data) ? r.data : {};
     if (d.ok) {
-      if (resultEl) resultEl.textContent = '连接成功 · ' + esc(d.provider || '') + ' · ' + esc(d.model || '') + ' · ' + Math.round(d.latency_ms || 0) + 'ms';
+      if (resultEl) resultEl.textContent = '连接成功 · ' + (provider === 'spark' ? 'Spark 真实生成' : '本地演示模板生成') + ' · ' + Math.round(d.latency_ms || 0) + 'ms';
       toast((provider === 'spark' ? '讯飞星火' : 'DeepSeek') + ' 连接测试成功', 'success');
       S.llmProvider = d.provider || provider;
       S.llmModel = d.model || model;
@@ -1825,13 +1895,15 @@ function _finishAskResponse(el, msg, d, box){
       _renderResourceSuggestions(suggestions, msg);
   }
   _renderAskSidebar(d);
+  S.modelStatusLabel = _publicModelStatus(d);
+  updateTopbar();
   if (d.profile_delta || d.student_profile) {
     const profileHint = d.student_profile || d.profile_delta || {};
     toast('学习画像已根据本轮对话自动更新：' + (profileHint.last_topic || profileHint.learning_goal || profileHint.knowledge_level || '已识别新状态'), 'success');
   }
   const statusEl = document.getElementById('avatar-status-text');
   if (statusEl) {
-    statusEl.textContent = (d.provider ? '模型 ' + d.provider : '讲解就绪') + ' · 可点击「讲解回答」';
+    statusEl.textContent = _publicModelStatus(d) + ' · 可点击「讲解回答」';
   }
   const artifacts = d.generated_artifacts || {};
   if (artifacts.ready_for_generation && artifacts.suggestions && artifacts.suggestions.length) {
@@ -1887,8 +1959,8 @@ async function streamAsk(payload, onToken){
         _renderAskSidebar({
           citations: parsed.citations || [],
           agent_traces: parsed.agent_traces || [],
-          provider: parsed.provider,
-          model: parsed.model,
+          model_status: parsed.model_status,
+          rag_status: parsed.rag_status,
         });
       } else if (eventName === 'token') {
         if (onToken) onToken(parsed.token || '');
@@ -1903,6 +1975,9 @@ async function streamAsk(payload, onToken){
     citations: (doneData && doneData.citations) || meta.citations || [],
     provider: (doneData && doneData.provider) || meta.provider,
     model: (doneData && doneData.model) || meta.model,
+    model_status: (doneData && doneData.model_status) || meta.model_status,
+    verification: doneData && doneData.verification,
+    rag_status: (doneData && doneData.rag_status) || meta.rag_status,
     agent_traces: (doneData && doneData.agent_traces) || meta.agent_traces || [],
     verifier_score: doneData && doneData.verifier_score,
     student_profile: (doneData && doneData.student_profile) || {},
@@ -1998,6 +2073,55 @@ function _profileSnapshotText(profile){
   return bits.join(' · ') || '尚未提取画像';
 }
 
+function _normalizeProfile(profile){
+  const p = profile && typeof profile === 'object' ? Object.assign({}, profile) : {};
+  p.profile_dimensions = _profileDimensions(p);
+  p.profile_updated_fields = Array.isArray(p.profile_updated_fields) ? p.profile_updated_fields : [];
+  p.profile_summary = p.profile_summary || '系统根据提问、练习、错题和资源使用行为动态更新学生画像。';
+  p.next_recommendation = p.next_recommendation || '建议先复习薄弱知识点，再完成 3 道同主题练习。';
+  return p;
+}
+
+function _profileListValue(value, fallback){
+  if (Array.isArray(value)) {
+    const items = value.map(function(v){ return String(v || '').trim(); }).filter(Boolean);
+    return items.length ? items : fallback;
+  }
+  if (typeof value === 'string') {
+    const parsed = _parseJsonList(value);
+    if (parsed.length) return parsed;
+    const text = value.trim();
+    return text ? [text] : fallback;
+  }
+  return fallback;
+}
+
+function _profileDimensions(profile){
+  const dims = (profile && profile.profile_dimensions) || {};
+  const weak = _profileListValue(dims['薄弱知识点'] !== undefined ? dims['薄弱知识点'] : profile.weak_points, ['待识别']);
+  const prefs = _profileListValue(dims['资源偏好'] !== undefined ? dims['资源偏好'] : profile.resource_preference, ['讲义', '思维导图', '练习题']).map(resourceLabel);
+  const wrongTypes = _profileListValue(dims['错题类型'] !== undefined ? dims['错题类型'] : profile.wrong_question_types, ['待积累']);
+  return {
+    '知识基础': dims['知识基础'] || profile.knowledge_level || '待识别',
+    '学习目标': dims['学习目标'] || profile.learning_goal || '理解核心概念并完成基础练习',
+    '薄弱知识点': weak,
+    '认知风格': dims['认知风格'] || profile.cognitive_style || '偏好分步骤讲解',
+    '资源偏好': prefs,
+    '错题类型': wrongTypes,
+    '掌握度变化': dims['掌握度变化'] || profile.mastery_trend || '暂无足够数据',
+    '学习节奏': dims['学习节奏'] || profile.pace_preference || '正常',
+  };
+}
+
+function _profileValueText(value){
+  if (Array.isArray(value)) return value.filter(Boolean).join(' / ') || '待识别';
+  return String(value || '待识别');
+}
+
+function _profileUpdatedText(profile){
+  return (Array.isArray(profile.profile_updated_fields) ? profile.profile_updated_fields : []).filter(Boolean).join('、');
+}
+
 function _unwrapProfilePayload(res){
   const d = unwrapApi(res);
   if (d && d.profile && typeof d.profile === 'object') return d.profile;
@@ -2046,34 +2170,39 @@ async function loadProfileCenter(){
       api('/api/profiles/current'),
       api('/api/profiles/history')
     ]);
-    const profile = profileRes.ok ? _unwrapProfilePayload(profileRes) : {};
+    const profile = _normalizeProfile(profileRes.ok ? _unwrapProfilePayload(profileRes) : {});
     const history = historyRes.ok ? unwrapApi(historyRes) : {};
     S.currentProfile = profile;
-    const weakPoints = _parseJsonList(profile.weak_points);
-    const prefs = _parseJsonList(profile.resource_preference);
     const versions = history.versions || [];
     const changes = history.change_logs || [];
     const metrics = _unwrapProfileMetrics(profileRes, profile, history);
-    const cards = [
-      ['知识基础', profile.knowledge_level || '未识别', metrics.knowledge_score || 0, '决定讲解深度和例题难度'],
-      ['学习目标', profile.learning_goal || '未识别', metrics.goal_clarity_score || 0, '用于规划资源包和学习路径'],
-      ['认知风格', profile.cognitive_style || '未识别', metrics.cognitive_match_score || 0, '决定图解、推导、案例或练习优先级'],
-      ['内容偏好', prefs.join(' · ') || '暂无', Math.min(100, (metrics.resource_preference_count || 0) * 25), '用于推荐讲义、导图、题库、PPT、阅读或视频脚本'],
-      ['薄弱点', weakPoints.join(' · ') || '暂无', Math.min(100, (metrics.weak_point_count || 0) * 25), '用于错题复盘和专项资源生成'],
-      ['学习节奏', profile.pace_preference || 'moderate', 62, '用于控制学习路径节奏和复习频率'],
-      ['学习历史', versions.length + ' 个画像版本 / ' + changes.length + ' 条变化', metrics.learning_activity_score || 0, '来自对话、测验、错题和学习行为'],
-      ['情绪信心', profile.emotion_tendency || profile.confidence_level || '待识别', Math.max(30, 100 - (metrics.review_risk_score || 0)), '用于调整鼓励、提示和辅导方式'],
-    ];
+    const dims = _profileDimensions(profile);
+    const updatedText = _profileUpdatedText(profile);
+    const dimensionMeta = {
+      '知识基础': ['决定讲解深度和例题难度', metrics.knowledge_score || 0],
+      '学习目标': ['用于规划资源包和学习路径', metrics.goal_clarity_score || 0],
+      '薄弱知识点': ['用于错题复盘和专项资源生成', Math.min(100, (metrics.weak_point_count || _profileListValue(dims['薄弱知识点'], []).length) * 25)],
+      '认知风格': ['决定图解、推导、案例或练习优先级', metrics.cognitive_match_score || 0],
+      '资源偏好': ['用于推荐讲义、导图、题库、PPT、阅读或视频脚本', Math.min(100, (metrics.resource_preference_count || _profileListValue(dims['资源偏好'], []).length) * 25)],
+      '错题类型': ['来自练习提交和错题本记录', _profileValueText(dims['错题类型']).includes('待积累') ? 20 : 72],
+      '掌握度变化': ['来自问答、练习、错题和学习报告', _profileValueText(dims['掌握度变化']).includes('暂无') ? 20 : 68],
+      '学习节奏': ['用于控制学习路径节奏和复习频率', 62],
+    };
+    const dimensionOrder = ['知识基础','学习目标','薄弱知识点','认知风格','资源偏好','错题类型','掌握度变化','学习节奏'];
+    const cards = dimensionOrder.map(function(label){
+      const meta = dimensionMeta[label] || ['', 50];
+      return [label, _profileValueText(dims[label]), meta[1], meta[0]];
+    });
     let h = '';
-    h += '<div class="card"><div class="card-header"><h3>学习画像中心</h3><button class="btn btn-sm btn-outline" onclick="loadProfileCenter()">🔄 刷新</button></div>';
-    h += '<div class="course-card"><h4>画像概览</h4><div class="course-meta"><span>' + esc(_profileSnapshotText(profile)) + '</span><span>确认状态 ' + esc(profile.profile_source || 'dialogue') + '</span><span>版本 #' + esc(String(profile.profile_version || 1)) + '</span></div></div>';
+    h += '<div class="card"><div class="card-header"><div><h3>对话式学习画像</h3><p class="muted">系统根据提问、练习、错题和资源使用行为动态更新学生画像</p></div><button class="btn btn-sm btn-outline" onclick="loadProfileCenter()">🔄 刷新</button></div>';
+    h += '<div class="course-card"><h4>动态画像概览</h4><div class="course-meta"><span>' + esc(_profileSnapshotText(profile)) + '</span><span>版本 #' + esc(String(profile.profile_version || 1)) + '</span><span>' + esc(updatedText ? '本轮更新：' + updatedText : '本轮更新：待积累') + '</span></div><p style="font-size:13px;line-height:1.7;color:var(--gray-600);margin-top:8px">' + esc(profile.profile_summary || '') + '</p><div class="course-meta"><span>下一步建议：' + esc(profile.next_recommendation || '建议先复习薄弱知识点，再完成 3 道同主题练习。') + '</span></div></div>';
     h += '<div class="grid grid-2" style="margin-top:12px">' +
       _metricCard('画像置信度', metrics.profile_confidence_pct || 0, '%', '对当前画像判断的可靠程度，来自对话、测验和错题证据。') +
       _metricCard('学习活跃度', metrics.learning_activity_score || 0, '%', '由对话轮次、画像版本和错题行为综合估计。') +
       _metricCard('复习风险', metrics.review_risk_score || 0, '%', '薄弱点和基础水平共同决定，越高越需要专项复盘。', '#e11d48') +
       _metricCard('证据数量', metrics.evidence_count || 0, '', '系统实际记录的画像变化依据条数。', '#4f46e5') +
     '</div>';
-    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>六维学习画像</h3></div><div class="grid grid-2">' + cards.map(c => '<div class="course-card"><div style="display:flex;justify-content:space-between;gap:8px"><h4>' + esc(c[0]) + '</h4><strong style="color:var(--primary)">' + esc(String(c[2])) + '%</strong></div><div class="course-meta"><span>' + esc(c[1]) + '</span></div><div style="height:6px;background:#eef2f7;border-radius:999px;overflow:hidden;margin-top:8px"><span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, Number(c[2]) || 0)) + '%;background:var(--primary)"></span></div><p style="font-size:12px;line-height:1.6;color:var(--gray-500);margin-top:6px">' + esc(c[3]) + '</p></div>').join('') + '</div></div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>8 维动态画像</h3></div><div class="grid grid-2">' + cards.map(c => '<div class="course-card"><div style="display:flex;justify-content:space-between;gap:8px"><h4>' + esc(c[0]) + '</h4><strong style="color:var(--primary)">' + esc(String(c[2])) + '%</strong></div><div class="course-meta"><span>' + esc(c[1]) + '</span></div><div style="height:6px;background:#eef2f7;border-radius:999px;overflow:hidden;margin-top:8px"><span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, Number(c[2]) || 0)) + '%;background:var(--primary)"></span></div><p style="font-size:12px;line-height:1.6;color:var(--gray-500);margin-top:6px">' + esc(c[3]) + '</p></div>').join('') + '</div></div>';
     h += '<div class="grid grid-2" style="margin-top:12px">';
     h += '<div class="card"><div class="card-header"><h3>画像如何参与生成</h3></div><div class="course-card"><h4>问答适配</h4><div class="course-meta"><span>根据知识基础和认知风格调整回答深度</span></div></div><div class="course-card"><h4>资源包适配</h4><div class="course-meta"><span>根据内容偏好和薄弱点选择资源类型</span></div></div><div class="course-card"><h4>学习路径适配</h4><div class="course-meta"><span>根据学习节奏和掌握度安排复习顺序</span></div></div></div>';
     h += '<div class="card"><div class="card-header"><h3>画像操作</h3></div><div class="course-card"><h4>自动对话构建</h4><div class="course-meta"><span>通过自然语言提取并持续修正画像</span></div></div><div class="course-card"><h4>历史版本</h4><div class="course-meta"><span>' + esc(String(versions.length)) + ' 个版本</span></div></div><div class="course-card"><h4>变更日志</h4><div class="course-meta"><span>' + esc(String(changes.length)) + ' 条变化记录</span></div></div></div>';

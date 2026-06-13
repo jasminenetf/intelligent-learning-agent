@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = "hash_mock"
     EMBEDDING_DIM: int = 384
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+    RAG_RETRIEVAL_MODE: str = "ChromaDB course-filtered vector search"
     # Spark LLM (placeholder)
     SPARK_APP_ID: str = ""
     SPARK_API_SECRET: str = ""
