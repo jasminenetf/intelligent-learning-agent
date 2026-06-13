@@ -950,29 +950,49 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 "回到题目问法，写出完整结论。",
             ],
         }
+    intuition = {
+        "积分": "把很多小块累加起来看总量，例如面积、路程或总变化量。",
+        "极限": "让变量不断靠近某个位置，观察函数值是否稳定靠近一个确定目标。",
+        "导数": "把一段平均变化压缩到一个瞬间，得到此刻的变化速度。",
+    }.get(keyword, f"先把「{title}」看成一个可观察、可检查、可验证的学习对象。")
+    contrast = {
+        "积分": "不定积分找原函数，定积分算区间累积量；不要把两者的结果形式混用。",
+        "极限": "极限看趋近过程，不等于直接代入函数值；函数在该点无定义也可能有极限。",
+        "导数": "导数不是普通除法，而是极限意义下的瞬时变化率。",
+    }.get(keyword, "先区分概念含义、适用条件和计算动作，避免把相近词混成一类。")
+    rich_example_steps = example["solution"][:5]
     return [
         {
-            "title": "这节课先解决什么问题",
+            "title": f"今天要把「{title}」真正讲明白",
             "student_problem": f"学生现在不是缺一个结论，而是不知道「{title}」到底在研究什么、题目中哪些条件必须先看。",
+            "lead_in": f"先抛一个课堂问题：如果题目只出现「{title}」三个字，你第一步究竟该看对象、条件，还是公式？",
+            "visual_metaphor": f"把本节课想成一条路线：真实问题 -> 直观理解 -> 数学定义 -> 例题验证 -> 错因修正。",
             "bullets": [
-                f"本节目标：把「{title}」从概念、条件、例题到练习完整讲通",
-                f"当前薄弱点：{', '.join(weak_points[:3])}",
-                f"适配基础：{student_level}，先用直观语言，再上数学表达",
+                f"本节课不是背结论，而是学会遇到「{title}」时怎么想",
+                f"当前薄弱点：{', '.join(weak_points[:3])}，所以先慢讲条件和步骤",
+                f"课堂目标：能用自己的话解释概念，并独立完成一道基础题",
             ],
+            "board_work": [
+                "板书主线：问题情境 -> 概念人话 -> 数学定义 -> 例题步骤 -> 易错检查",
+                "课堂约定：每一步都要回答“为什么能这样做”",
+            ],
+            "mini_activity": "让学生先口头回答：这类题第一眼要圈出哪些词？",
             "teacher_script": (
                 f"今天不先背公式。我们先回答一个问题：遇到「{title}」时，题目到底要我们判断什么。"
                 "只要这个问题想清楚，后面的公式、例题和错题都会变得有位置。"
             ),
-            "board_work": ["写下本节三问：研究对象是什么？条件是什么？怎么算/怎么证？"],
             "check_question": "你看到一道题时，第一眼会先找公式，还是先找研究对象和条件？",
+            "takeaway": "先判断问题类型，再选择工具。"
         },
         {
-            "title": "用直观语言讲清核心概念",
+            "title": "先用人话建立直观图像",
             "student_problem": "学生常把定义当成一串符号，没理解它在描述一个变化过程。",
+            "lead_in": "先不写正式定义，只问：这个概念在观察什么变化？",
+            "visual_metaphor": intuition,
             "bullets": [
-                ctx["summary"],
-                "先看自变量或对象怎么变化，再看结果是否稳定靠近某个确定值",
-                "不要一上来就套公式，先用一句人话说出题目在问什么",
+                f"教材核心：{ctx['summary']}",
+                "先说“它在研究什么”，再说“怎么用符号写严格”",
+                "用一个生活化或图像化说法托住抽象定义",
             ],
             "teacher_script": (
                 f"把「{title}」先翻译成人话：它不是让我们机械计算，而是观察一个过程。"
@@ -982,11 +1002,15 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 f"教材位置：{ctx['chapter']}",
                 "直观表达：对象变化 -> 结果趋势 -> 是否稳定",
             ],
+            "mini_activity": "请学生把正式定义改写成一句不超过 20 字的人话。",
             "check_question": "如果不用公式，你能用一句话解释这个概念吗？",
+            "takeaway": "先有图像，再接符号。"
         },
         {
-            "title": "把定义拆成能做题的条件",
+            "title": "把定义拆成做题检查表",
             "student_problem": "学生会背定义，但做题时不知道哪些条件对应哪一步。",
+            "lead_in": "老师在这里要把定义拆成几个可执行动作，让学生知道每一步检查什么。",
+            "visual_metaphor": "定义不是一句话，而是一张闯关表：对象对不对、条件够不够、方法能不能用。",
             "bullets": [
                 f"第一步：{ctx['steps'][0]}",
                 f"第二步：{ctx['steps'][1] if len(ctx['steps']) > 1 else '选择合适方法'}",
@@ -999,15 +1023,20 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 "条件检查表：对象 / 范围 / 趋势 / 方法 / 结论",
                 "每一步旁边写出依据，防止跳步",
             ],
+            "mini_activity": "给一道题干，只让学生圈条件，不要求计算。",
             "check_question": "这道题如果不能直接代入，下一步应该检查什么？",
+            "takeaway": "会做题的人不是先套公式，而是先过条件。"
         },
         {
-            "title": "带学生做一道完整例题",
+            "title": "老师示范：完整讲一道例题",
             "student_problem": "学生不会通常卡在中间步骤，不知道为什么要这样变形。",
+            "lead_in": "这一页要像黑板讲题：先读题，再判断，再动笔，不直接跳答案。",
+            "visual_metaphor": "把例题拆成“读题-选法-计算-解释-回看”五个镜头。",
             "bullets": [
                 example["problem"],
-                "先读题圈出关键词，再判断适用条件",
-                "每一步写清楚：为什么能这么做，得到什么结论",
+                f"第 1 步：{rich_example_steps[0]}",
+                f"第 2 步：{rich_example_steps[1] if len(rich_example_steps) > 1 else '选择方法并写出依据'}",
+                f"第 3 步：{rich_example_steps[2] if len(rich_example_steps) > 2 else '完成计算并解释结论'}",
             ],
             "teacher_script": (
                 "讲例题时不要只给答案。先停在读题阶段，让学生说出已知条件；再一步一步把条件变成做题动作。"
@@ -1015,11 +1044,16 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
             "board_work": [
                 *example["solution"],
             ],
+            "worked_example": example,
+            "mini_activity": "讲到关键变形前停 5 秒，让学生说下一步为什么能这样做。",
             "check_question": "这一步用了哪个定义或定理？如果这个条件不存在，还能这样做吗？",
+            "takeaway": "例题不是答案展示，而是思维过程展示。"
         },
         {
-            "title": "专门纠正常见误区",
+            "title": "对比纠错：把容易混的地方讲透",
             "student_problem": "学生不是没学，而是用错条件、跳过依据或把相近概念混在一起。",
+            "lead_in": "这一页专门讲错法，因为学生经常不是不会，而是把相邻概念和条件混用。",
+            "visual_metaphor": contrast,
             "bullets": ctx["pitfalls"][:3],
             "teacher_script": (
                 "错题不是简单地重做一遍。每个错误都要归因：是概念错、条件漏、计算错，还是审题错。"
@@ -1028,15 +1062,19 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 "错因分类：概念 / 条件 / 方法 / 计算 / 表达",
                 "把今天的错题归到其中一类",
             ],
+            "mini_activity": "展示一个错误解法，让学生指出错在条件、概念还是计算。",
             "check_question": "你最容易犯的是哪一种错？下一题准备怎么避免？",
+            "takeaway": "纠错的目标是修正判断习惯。"
         },
         {
-            "title": "课堂即时练习",
+            "title": "课堂练习：从会听到会做",
             "student_problem": "听懂不等于会做，必须马上用题目检查理解。",
+            "lead_in": "这一页不要堆难题，要用分层练习确认学生真的学会。",
+            "visual_metaphor": "练习像三道门：概念门、步骤门、解释门，一道一道过。",
             "bullets": [
-                "练习 1：判断题，检查概念边界",
-                "练习 2：基础计算/证明，检查步骤",
-                "练习 3：错因复盘题，检查是否能解释为什么错",
+                f"概念判断：{ctx['pitfalls'][0] if ctx.get('pitfalls') else '判断概念适用边界'}",
+                f"基础题：仿照例题完成「{title}」的一步一步解答",
+                "解释题：写出每一步依据，而不是只写最终答案",
             ],
             "teacher_script": (
                 "练习不要堆难题。先用一题确认概念，再用一题确认步骤，最后用一题确认学生能解释错因。"
@@ -1045,11 +1083,15 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 "每题提交后写一句：我这题检查了什么条件？",
                 "错题自动加入错题本，生成下一轮复习路径",
             ],
+            "mini_activity": "学生做完后让他补一句“我刚才用的是哪个条件”。",
             "check_question": "如果只让你复习一个点，你会选定义、条件还是例题步骤？",
+            "takeaway": "能解释依据，才算真正会做。"
         },
         {
-            "title": "课后怎么继续学",
+            "title": "课后闭环：资料怎么用才有效",
             "student_problem": "学生课后容易只看答案，不知道下一步学什么资料。",
+            "lead_in": "最后一页给出明确的学习顺序，避免学生离开课堂后只刷题不复盘。",
+            "visual_metaphor": "课后不是散着学，而是按“补概念-看结构-做题-复盘错因”闭环推进。",
             "bullets": [
                 "先看讲义：补概念和条件",
                 "再看思维导图：建立知识关系",
@@ -1062,7 +1104,9 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
                 "今日闭环：提问 -> 讲解 -> 导图 -> 练习 -> 错题 -> 新路径",
                 "下一次从错题最高频知识点开始",
             ],
+            "mini_activity": "让学生选择下一步资源：讲义、结构图、同主题练习或错题复盘。",
             "check_question": "你下一次打开系统时，第一步要看哪份资料？",
+            "takeaway": "课后路线要服务于薄弱点，而不是机械刷题。"
         },
     ]
 
@@ -1230,9 +1274,21 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
             if slide.get("student_problem"):
                 lines.append(f"**学生卡点**：{slide.get('student_problem')}")
                 lines.append("")
+            if slide.get("lead_in"):
+                lines.append(f"**课堂导入**：{slide.get('lead_in')}")
+                lines.append("")
+            if slide.get("visual_metaphor"):
+                lines.append(f"**直观讲法/类比**：{slide.get('visual_metaphor')}")
+                lines.append("")
             lines.append("**本页要教会学生：**")
             for bullet in slide.get("bullets") or slide.get("points") or []:
                 lines.append(f"- {bullet}")
+            if slide.get("worked_example"):
+                ex = slide.get("worked_example") or {}
+                lines.append("")
+                lines.append(f"**课堂例题**：{ex.get('problem', '')}")
+                for step in ex.get("solution") or []:
+                    lines.append(f"- {step}")
             if slide.get("teacher_script") or slide.get("speaker_notes"):
                 lines.append("")
                 lines.append(f"**老师讲法**：{slide.get('teacher_script') or slide.get('speaker_notes')}")
@@ -1244,6 +1300,12 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
             if slide.get("check_question"):
                 lines.append("")
                 lines.append(f"**课堂检查问题**：{slide.get('check_question')}")
+            if slide.get("mini_activity"):
+                lines.append("")
+                lines.append(f"**课堂互动**：{slide.get('mini_activity')}")
+            if slide.get("takeaway"):
+                lines.append("")
+                lines.append(f"**本页收获**：{slide.get('takeaway')}")
             lines.append("\n---")
         return "\n".join(lines)
     if resource_type == "study_plan":

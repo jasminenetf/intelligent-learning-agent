@@ -897,23 +897,35 @@ function _renderPptPanel(el, d){
   const frameCss =
     'position:relative;width:100%;padding-top:56.25%;background:linear-gradient(135deg,#fff 0%,#f4f7ff 58%,#eef3ff 100%);overflow:hidden';
   const canvasCss =
-    'position:absolute;inset:0;box-sizing:border-box;padding:28px 38px;display:flex;flex-direction:column;gap:13px';
+    'position:absolute;inset:0;box-sizing:border-box;padding:24px 34px;display:flex;flex-direction:column;gap:10px';
   const badgeCss =
     'position:absolute;right:24px;top:18px;font-size:12px;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 10px';
-  const titleCss = 'font-size:28px;line-height:1.16;font-weight:800;color:#111827;margin:0;letter-spacing:0;max-width:82%';
-  const subtitleCss = 'font-size:14px;line-height:1.55;color:#475569;margin:0;max-width:86%';
-  const bulletCss = 'font-size:17px;line-height:1.55;color:#1f2937;margin:0;padding-left:22px;max-height:132px;overflow:hidden';
-  const calloutCss = 'margin-top:auto;border-left:5px solid #4f46e5;background:#eef2ff;border-radius:8px;padding:10px 14px;font-size:14px;line-height:1.5;color:#1e293b;max-height:70px;overflow:hidden';
+  const titleCss = 'font-size:27px;line-height:1.14;font-weight:800;color:#111827;margin:0;letter-spacing:0;max-width:82%';
+  const subtitleCss = 'font-size:13px;line-height:1.5;color:#475569;margin:0;max-width:88%';
+  const leadCss = 'font-size:13px;line-height:1.45;color:#1e293b;background:#fff;border:1px solid #dbe4ff;border-radius:8px;padding:8px 10px;max-height:56px;overflow:hidden';
+  const gridCss = 'display:grid;grid-template-columns:1.04fr .96fr;gap:12px;min-height:0;flex:1';
+  const panelCss = 'background:rgba(255,255,255,.72);border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;min-width:0;overflow:hidden';
+  const panelTitleCss = 'font-size:12px;font-weight:800;color:#4f46e5;margin-bottom:6px';
+  const bulletCss = 'font-size:15px;line-height:1.48;color:#1f2937;margin:0;padding-left:20px;max-height:130px;overflow:hidden';
+  const smallTextCss = 'font-size:14px;line-height:1.55;color:#334155;margin:0;max-height:116px;overflow:hidden';
+  const activityCss = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:auto';
+  const calloutCss = 'border-left:5px solid #4f46e5;background:#eef2ff;border-radius:8px;padding:9px 12px;font-size:13px;line-height:1.45;color:#1e293b;max-height:64px;overflow:hidden';
   const notesCss = 'border-top:1px solid #e5e7eb;background:#fff;padding:12px 18px;font-size:12px;color:#64748b';
   el.innerHTML =
     '<div class="course-card"><h4>' + esc(title) + '</h4><div class="course-meta"><span>共 ' + esc(String(slideCount)) + ' 页</span><span>课堂演示版 PPT</span><span>中间区域按幻灯片展示</span></div><div style="margin-top:8px">' + _resourceDownloadBtn(null, d.download_url, title + '.md').replace('>下载<', '>下载教学稿<') + '</div></div>' +
     (slides.length ? slides.map(function(s, i){
-      const bullets = (s.bullets || s.points || []).slice(0, 4);
+      const bullets = (s.bullets || s.points || []).slice(0, 3);
       const titleText = s.title || s.heading || '课件页';
       const subtitle = s.student_problem || s.content || '';
-      const callout = s.check_question || (s.board_work || [])[0] || '';
+      const lead = s.lead_in || '';
+      const visual = s.visual_metaphor || '';
+      const activity = s.mini_activity || '';
+      const takeaway = s.takeaway || '';
+      const example = s.worked_example && s.worked_example.problem ? s.worked_example.problem : '';
+      const callout = s.check_question || '';
       const notes = [
         (s.teacher_script || s.speaker_notes) ? '<strong>讲课提示：</strong>' + esc(s.teacher_script || s.speaker_notes) : '',
+        example ? '<strong>例题：</strong>' + esc(example) : '',
         (s.board_work || []).length ? '<strong>板书：</strong>' + esc((s.board_work || []).join(' / ')) : '',
       ].filter(Boolean).join('<br>');
       return '<section style="' + slideCss + '">' +
@@ -922,8 +934,19 @@ function _renderPptPanel(el, d){
             '<span style="' + badgeCss + '">第 ' + (i + 1) + ' / ' + esc(String(slideCount)) + ' 页</span>' +
             '<h2 style="' + titleCss + '">' + esc(titleText) + '</h2>' +
             (subtitle ? '<p style="' + subtitleCss + '">' + esc(subtitle) + '</p>' : '') +
-            (bullets.length ? '<ul style="' + bulletCss + '">' + bullets.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') +
-            (callout ? '<div style="' + calloutCss + '">' + esc(callout) + '</div>' : '') +
+            (lead ? '<div style="' + leadCss + '">课堂导入：' + esc(lead) + '</div>' : '') +
+            '<div style="' + gridCss + '">' +
+              '<div style="' + panelCss + '"><div style="' + panelTitleCss + '">本页讲清楚</div>' +
+                (bullets.length ? '<ul style="' + bulletCss + '">' + bullets.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p style="' + smallTextCss + '">' + esc(subtitle || titleText) + '</p>') +
+              '</div>' +
+              '<div style="' + panelCss + '"><div style="' + panelTitleCss + '">老师怎么讲</div>' +
+                '<p style="' + smallTextCss + '">' + esc(visual || example || callout || '先讲直观含义，再落到定义、条件和例题。') + '</p>' +
+              '</div>' +
+            '</div>' +
+            '<div style="' + activityCss + '">' +
+              '<div style="' + calloutCss + '">' + esc(activity || callout || '请学生先说思路，再看标准步骤。') + '</div>' +
+              '<div style="' + calloutCss + '"><strong>本页收获：</strong>' + esc(takeaway || callout || '知道这一步为什么这样做。') + '</div>' +
+            '</div>' +
           '</div>' +
         '</div>' +
         (notes ? '<details style="' + notesCss + '"><summary style="cursor:pointer;color:#475569;font-weight:700">展开教师备注 / 板书</summary><div style="margin-top:8px;line-height:1.7">' + notes + '</div></details>' : '') +
