@@ -260,6 +260,34 @@ def _profile_list(value: Any) -> list[str]:
     return [str(value)]
 
 
+def _readable_math_text(text: Any) -> str:
+    """Keep mindmap labels readable in browsers that render math symbols poorly."""
+    value = str(text or "")
+    replacements = {
+        "∫": "积分",
+        "∞": "无穷大",
+        "→": "趋近",
+        "≠": "不等于",
+        "≤": "小于等于",
+        "≥": "大于等于",
+        "Δ": "增量",
+        "²": "的平方",
+        "³": "的三次方",
+        "lim": "极限",
+        "dx": "微分dx",
+        "dy": "微分dy",
+        "f'(x)": "f的导函数",
+        "y'": "y的一阶导",
+        "0/0": "零比零型",
+        "∞/∞": "无穷比无穷型",
+        "<br/>": " ",
+        "<br>": " ",
+    }
+    for src, dst in replacements.items():
+        value = value.replace(src, dst)
+    return value
+
+
 def _merge_unique(items: list[str], additions: list[str], limit: int = 8) -> list[str]:
     out: list[str] = []
     for item in [*items, *additions]:
@@ -350,6 +378,43 @@ def _update_demo_profile(message: str, source: str = "dialogue") -> dict[str, An
     })
     STATE["profile_versions"] = STATE["profile_versions"][:10]
     return dict(profile)
+
+
+def _profile_numeric_metrics(profile: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile = profile or STATE["profile"]
+    level_score = {
+        "foundation": 38,
+        "beginner": 38,
+        "medium": 62,
+        "intermediate": 62,
+        "advanced": 82,
+    }.get(str(profile.get("knowledge_level") or "").lower(), 45 if profile.get("profile_version") else 0)
+    style_score = {
+        "visual-structured": 86,
+        "logical": 78,
+        "practice-driven": 82,
+        "structured": 76,
+    }.get(str(profile.get("cognitive_style") or "").lower(), 45 if profile.get("profile_version") else 0)
+    weak_count = len(_profile_list(profile.get("weak_points")))
+    pref_count = len(_profile_list(profile.get("resource_preference")))
+    version = int(profile.get("profile_version") or 0)
+    confidence = int(round(float(profile.get("profile_confidence") or 0) * 100))
+    goal_score = 82 if profile.get("learning_goal") else (35 if version else 0)
+    activity_score = min(100, version * 16 + len(STATE.get("wrong_book", [])) * 8 + len(STATE.get("sessions", [])) * 6)
+    risk_score = min(100, weak_count * 18 + max(0, 70 - level_score) // 2)
+    return {
+        "profile_confidence_pct": confidence,
+        "knowledge_score": level_score,
+        "goal_clarity_score": goal_score,
+        "cognitive_match_score": style_score,
+        "weak_point_count": weak_count,
+        "resource_preference_count": pref_count,
+        "learning_activity_score": activity_score,
+        "review_risk_score": risk_score,
+        "evidence_count": len(STATE.get("profile_changes", [])),
+        "version_count": len(STATE.get("profile_versions", [])),
+        "wrong_book_count": len(STATE.get("wrong_book", [])),
+    }
 
 
 def _build_demo_study_plan(topic: str) -> dict[str, Any]:
@@ -486,7 +551,8 @@ def _parse_json_object(text: str) -> Any:
 
 
 def _safe_node(text: str, limit: int = 28) -> str:
-    return str(text or "").replace('"', "'").replace("[", " ").replace("]", " ").replace("\n", " ").strip()[:limit] or "知识点"
+    cleaned = _readable_math_text(text).replace('"', "'").replace("[", " ").replace("]", " ").replace("\n", " ").strip()
+    return cleaned[:limit] or "知识点"
 
 
 def _structured_mindmap(topic: str) -> str:
@@ -503,8 +569,8 @@ def _structured_mindmap(topic: str) -> str:
     return "\n".join([
         "flowchart TB",
         f'  A(("{t}"))',
-        f'  A --> B["教材坐标<br/>{_safe_node(ctx["chapter"], 24)}"]',
-        f'  A --> C["核心概念<br/>{keyword}"]',
+        f'  A --> B["教材坐标：{_safe_node(ctx["chapter"], 24)}"]',
+        f'  A --> C["核心概念：{keyword}"]',
         f'  A --> D["条件判定"]',
         f'  A --> E["方法路径"]',
         f'  A --> F["题型入口"]',
@@ -1082,6 +1148,67 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
             "takeaway": "先有图像，再接符号。"
         },
         {
+            "title": "先修基础补缺：不会时先补哪里",
+            "student_problem": "学生卡住往往不是当前页没听懂，而是前置概念没有接上。",
+            "lead_in": "先不要急着做题，先检查自己是不是缺了前置工具。",
+            "visual_metaphor": "像搭楼梯：少一阶就会觉得后面的公式突然跳起来。",
+            "bullets": [
+                f"教材位置：{ctx['chapter']}",
+                "先会读题干里的对象、范围、条件和结论",
+                "再进入定义、公式或例题，不要倒着学",
+            ],
+            "learning_sections": [
+                {"title": "必须先会", "items": ["能说出题目研究对象", "能圈出限制条件", "能判断要求计算还是证明"]},
+                {"title": "缺了会怎样", "items": ["看到公式不知道何时用", "例题步骤能看懂但自己不会开头", "错题只改答案不改思路"]},
+            ],
+            "teacher_script": "这一页的目标是帮学生定位不会的根源。不要把所有问题都归因成笨，很多时候只是前置条件没有补齐。",
+            "board_work": ["前置检查：对象 / 范围 / 条件 / 目标", "任意一项说不清，先回讲义或结构图补齐"],
+            "mini_activity": "让学生对当前题目做 30 秒标注：圈对象，画条件，划问题。",
+            "check_question": "如果你现在不会开头，是因为概念不懂、条件没圈，还是方法不会选？",
+            "takeaway": "先修基础补齐，后面的公式才有落点。"
+        },
+        {
+            "title": "正式定义逐句拆开",
+            "student_problem": "学生看定义时容易整段背下来，但不知道每个短语有什么用。",
+            "lead_in": "现在开始读定义，但不是背定义，而是拆定义。",
+            "visual_metaphor": "定义像说明书：每一句都对应做题时的一项检查。",
+            "bullets": [
+                f"核心句：{ctx['summary']}",
+                "把定义分成对象、条件、过程、结论四块",
+                "每做一道题都回到这四块核对",
+            ],
+            "learning_sections": [
+                {"title": "对象", "items": [f"本题围绕：{keyword or title}", "先问它研究谁"]},
+                {"title": "条件", "items": ctx["steps"][:2]},
+                {"title": "结论", "items": ["最后要写出什么", "结论是否满足题目问法"]},
+            ],
+            "teacher_script": "这里要慢下来读。每出现一个条件，就问学生：如果这个条件没有，会发生什么？",
+            "board_work": ["定义四格：对象 | 条件 | 过程 | 结论", "把题干信息填进四格再开始计算"],
+            "mini_activity": "让学生把定义中的条件词用不同颜色标出来。",
+            "check_question": "这一定义里最容易漏看的条件是哪一个？",
+            "takeaway": "定义不是装饰文字，是做题检查表。"
+        },
+        {
+            "title": "符号怎么读：把数学式翻译成人话",
+            "student_problem": "学生不是不会算，而是看到函数、极限、积分符号后不知道它们在说什么。",
+            "lead_in": "先把符号翻译成人话，再决定怎么计算。",
+            "visual_metaphor": "符号是压缩语言，解题前要先解压。",
+            "bullets": [
+                "函数符号：先看输入、输出和变化关系",
+                "极限语言：看趋近过程，不只看某一点函数值",
+                "积分语言：看原函数或区间累积量，先区分题型",
+            ],
+            "learning_sections": [
+                {"title": "读题顺序", "items": ["先读变量和范围", "再读运算符号", "最后读题目要求"]},
+                {"title": "写题顺序", "items": ["先写判断依据", "再写计算过程", "最后解释结论"]},
+            ],
+            "teacher_script": "很多学生看到符号会慌。这里要告诉他：每个符号都先翻译成一句话，不懂这句话就不要急着算。",
+            "board_work": ["符号 -> 人话 -> 条件 -> 方法 -> 结论", "不允许只写公式不写依据"],
+            "mini_activity": "给一个短公式，让学生先说中文含义，不做计算。",
+            "check_question": "你能把题目里的第一个数学符号翻译成一句话吗？",
+            "takeaway": "看懂符号含义，才知道下一步该做什么。"
+        },
+        {
             "title": "把定义拆成做题检查表",
             "student_problem": "学生会背定义，但做题时不知道哪些条件对应哪一步。",
             "lead_in": "老师在这里要把定义拆成几个可执行动作，让学生知道每一步检查什么。",
@@ -1125,6 +1252,26 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
             "takeaway": "例题不是答案展示，而是思维过程展示。"
         },
         {
+            "title": "例题变式：从会一题到会一类题",
+            "student_problem": "学生常常听懂例题，但换个条件就不会做。",
+            "lead_in": "例题讲完后必须做变式，否则只能记住这一题。",
+            "visual_metaphor": "把例题当模板，但不能死背模板；要看哪些条件变了。",
+            "bullets": [
+                "变式 1：只改变数字，检查基本步骤是否掌握",
+                "变式 2：改变条件，检查是否会重新判断方法",
+                "变式 3：加入易错点，检查是否能解释错因",
+            ],
+            "learning_sections": [
+                {"title": "保留不变", "items": ["研究对象不变", "核心定义不变", "检查条件的顺序不变"]},
+                {"title": "允许变化", "items": ["数值或表达式变化", "方法选择可能变化", "结论表述要跟题目一致"]},
+            ],
+            "teacher_script": "这里不要再讲一遍原题，而是教学生迁移：哪些地方固定，哪些地方要重新判断。",
+            "board_work": ["原题 -> 改数字 -> 改条件 -> 加误区", "每个变式都写：变化点是什么？方法是否还适用？"],
+            "mini_activity": "让学生自己提出一个变式，并说明它和原题哪里不同。",
+            "check_question": "如果题目条件换了，你还会用刚才的方法吗？为什么？",
+            "takeaway": "学会一类题，靠的是识别不变量和变化点。"
+        },
+        {
             "title": "对比纠错：把容易混的地方讲透",
             "student_problem": "学生不是没学，而是用错条件、跳过依据或把相近概念混在一起。",
             "lead_in": "这一页专门讲错法，因为学生经常不是不会，而是把相邻概念和条件混用。",
@@ -1161,6 +1308,26 @@ def _teaching_ppt_slides(topic: str) -> list[dict[str, Any]]:
             "mini_activity": "学生做完后让他补一句“我刚才用的是哪个条件”。",
             "check_question": "如果只让你复习一个点，你会选定义、条件还是例题步骤？",
             "takeaway": "能解释依据，才算真正会做。"
+        },
+        {
+            "title": "自测诊断：判断自己是不是真会了",
+            "student_problem": "学生容易把“看懂了”误认为“会做了”。",
+            "lead_in": "最后用自测清单判断自己有没有真正掌握。",
+            "visual_metaphor": "自测不是考试，而是给自己做一次学习体检。",
+            "bullets": [
+                "能不用公式先说出概念含义",
+                "能列出做题前必须检查的条件",
+                "能独立完成基础题并解释每一步依据",
+            ],
+            "learning_sections": [
+                {"title": "达标标准", "items": ["会解释", "会开头", "会检查条件", "会复盘错因"]},
+                {"title": "未达标补救", "items": ["回看定义拆解页", "重做例题变式", "生成同主题练习"]},
+            ],
+            "teacher_script": "这一页要让学生知道下一步怎么补，不是简单说回去复习。",
+            "board_work": ["自测四问：是什么 / 何时用 / 怎么做 / 错在哪", "有一问答不上来，就回到对应资源"],
+            "mini_activity": "让学生给自己打分：解释、开头、计算、复盘各 0 到 2 分。",
+            "check_question": "你现在最不稳的是解释、开头、计算还是复盘？",
+            "takeaway": "能自测，才会自己补短板。"
         },
         {
             "title": "课后闭环：资料怎么用才有效",
@@ -1318,11 +1485,11 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
                 lines.append(str(node.get("summary")))
             for child in node.get("children") or []:
                 if isinstance(child, dict):
-                    label = child.get("label") or child.get("title") or child.get("summary") or ""
-                    hint = child.get("hint") or child.get("summary") or ""
+                    label = _readable_math_text(child.get("label") or child.get("title") or child.get("summary") or "")
+                    hint = _readable_math_text(child.get("hint") or child.get("summary") or "")
                     lines.append(f"- {label}" + (f"：{hint}" if hint else ""))
                 else:
-                    lines.append(f"- {child}")
+                    lines.append(f"- {_readable_math_text(child)}")
         if tree.get("relations"):
             lines.append("\n## 关系说明")
             for rel in tree.get("relations") or []:
@@ -1659,6 +1826,7 @@ def ask(body: AskRequest):
         "grounding": {"grounding_score": grounding_score, "risk_level": risk_level, "unsupported_claims": [], "verifier_type": "基础校验/引用完整性/基础可信度"},
         "content_safety": {"safe": True, "risk_level": risk_level},
         "student_profile": profile,
+        "profile_metrics": _profile_numeric_metrics(profile),
         "profile_delta": {
             "knowledge_level": profile.get("knowledge_level"),
             "learning_goal": profile.get("learning_goal"),
@@ -1923,7 +2091,8 @@ def current_profile():
         profile["knowledge_level"] = profile.get("knowledge_level") or "待识别"
         profile["cognitive_style"] = profile.get("cognitive_style") or "待识别"
         profile["learning_goal"] = profile.get("learning_goal") or "完成一次对话后自动识别"
-    return {"ok": True, "profile": profile, "data": {"profile": profile}, **profile}
+    metrics = _profile_numeric_metrics(profile)
+    return {"ok": True, "profile": profile, "metrics": metrics, "data": {"profile": profile, "metrics": metrics}, **profile}
 
 
 @app.get("/api/profiles/history")
@@ -1935,13 +2104,15 @@ def profile_history():
 @app.post("/api/profiles/me/extract")
 def profile_extract(payload: dict[str, Any]):
     profile = _update_demo_profile(str(payload.get("message") or payload.get("text") or ""), "manual_dialogue")
-    return {"ok": True, "profile": profile, "data": {"profile": profile}, **profile}
+    metrics = _profile_numeric_metrics(profile)
+    return {"ok": True, "profile": profile, "metrics": metrics, "data": {"profile": profile, "metrics": metrics}, **profile}
 
 
 @app.post("/api/profiles/me/confirm")
 def profile_confirm(payload: dict[str, Any] | None = None):
     STATE["profile"]["profile_source"] = "confirmed"
-    return {"ok": True, "profile": STATE["profile"], "data": {"profile": STATE["profile"]}}
+    metrics = _profile_numeric_metrics(STATE["profile"])
+    return {"ok": True, "profile": STATE["profile"], "metrics": metrics, "data": {"profile": STATE["profile"], "metrics": metrics}}
 
 
 @app.post("/api/profiles/history/{version_id}/restore")

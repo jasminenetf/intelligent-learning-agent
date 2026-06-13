@@ -744,6 +744,24 @@ function _mindmapTreeFromMermaid(code, title){
   return { title: root, nodes: buckets.filter(function(x){ return x.children.length || x.summary; }) };
 }
 
+function _cleanMathDisplayText(value){
+  return String(value == null ? '' : value)
+    .replace(/∫/g, '积分')
+    .replace(/∞/g, '无穷大')
+    .replace(/→/g, '趋近')
+    .replace(/≠/g, '不等于')
+    .replace(/≤/g, '小于等于')
+    .replace(/≥/g, '大于等于')
+    .replace(/Δ/g, '增量')
+    .replace(/²/g, '的平方')
+    .replace(/³/g, '的三次方')
+    .replace(/lim/gi, '极限')
+    .replace(/f'\(x\)/g, 'f的导函数')
+    .replace(/y'/g, 'y的一阶导')
+    .replace(/0\/0/g, '零比零型')
+    .replace(/∞\/∞/g, '无穷比无穷型');
+}
+
 function _renderMindmapTreePanel(el, data, title){
   if (!el) return;
   const tree = (data && data.tree) || _mindmapTreeFromMermaid(data && (data.mermaid || data.content), title);
@@ -771,8 +789,8 @@ function _renderMindmapTreePanel(el, data, title){
     const children = Array.isArray(node.children) ? node.children : [];
     const style = typeStyle[node.type] || ['#fff', '#4f46e5', String(idx + 1)];
     const childHtml = children.length ? children.map(function(child){
-      const label = typeof child === 'object' ? (child.label || child.title || child.summary || '') : child;
-      const hint = typeof child === 'object' ? (child.hint || child.summary || '') : '';
+      const label = _cleanMathDisplayText(typeof child === 'object' ? (child.label || child.title || child.summary || '') : child);
+      const hint = _cleanMathDisplayText(typeof child === 'object' ? (child.hint || child.summary || '') : '');
       return '<div style="border-top:1px solid #eef2f7;padding:8px 0 0;margin-top:8px">' +
         '<div style="font-size:13px;font-weight:700;color:#1f2937">' + esc(label) + '</div>' +
         (hint ? '<div style="font-size:11px;line-height:1.55;color:#64748b;margin-top:2px">' + esc(hint) + '</div>' : '') +
@@ -781,8 +799,8 @@ function _renderMindmapTreePanel(el, data, title){
     return '<section style="border:1px solid #e5e7eb;background:' + style[0] + ';border-radius:12px;padding:13px 14px;min-height:170px;box-shadow:0 8px 18px rgba(15,23,42,.04)">' +
       '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">' +
         '<span style="width:34px;height:34px;border-radius:10px;background:' + style[1] + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0">' + esc(style[2]) + '</span>' +
-        '<div><div style="font-size:15px;font-weight:800;color:#111827">' + esc(node.title || node.label || '知识模块') + '</div>' +
-        (node.summary ? '<div style="font-size:12px;line-height:1.55;color:#475569;margin-top:3px">' + esc(node.summary) + '</div>' : '') + '</div>' +
+        '<div><div style="font-size:15px;font-weight:800;color:#111827">' + esc(_cleanMathDisplayText(node.title || node.label || '知识模块')) + '</div>' +
+        (node.summary ? '<div style="font-size:12px;line-height:1.55;color:#475569;margin-top:3px">' + esc(_cleanMathDisplayText(node.summary)) + '</div>' : '') + '</div>' +
       '</div>' +
       childHtml +
     '</section>';
@@ -798,10 +816,10 @@ function _renderMindmapTreePanel(el, data, title){
         '</div>' +
       '</div>' +
       '<div class="mindmap-tree-readable">' +
-        '<div style="' + centerCss + '"><h4 style="' + centerTitleCss + '">' + esc(center.title || tree.title || title || '当前知识点') + '</h4><p style="font-size:13px;line-height:1.7;color:#475569;margin:0">' + esc(center.summary || tree.subtitle || '从中心概念向外看先修、定义、方法、题型、误区和后续连接。') + '</p>' +
-          (Array.isArray(center.tags) && center.tags.length ? '<div style="' + centerMetaCss + '">' + center.tags.map(function(t){ return '<span style="' + tagCss + '">' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+        '<div style="' + centerCss + '"><h4 style="' + centerTitleCss + '">' + esc(_cleanMathDisplayText(center.title || tree.title || title || '当前知识点')) + '</h4><p style="font-size:13px;line-height:1.7;color:#475569;margin:0">' + esc(_cleanMathDisplayText(center.summary || tree.subtitle || '从中心概念向外看先修、定义、方法、题型、误区和后续连接。')) + '</p>' +
+          (Array.isArray(center.tags) && center.tags.length ? '<div style="' + centerMetaCss + '">' + center.tags.map(function(t){ return '<span style="' + tagCss + '">' + esc(_cleanMathDisplayText(t)) + '</span>'; }).join('') + '</div>' : '') +
         '</div>' +
-        (relations.length ? '<div style="' + relationCss + '">' + relations.map(function(r){ return '<span style="' + relationItemCss + '">' + esc((r.from || '') + ' -> ' + (r.to || '') + (r.label ? '：' + r.label : '')) + '</span>'; }).join('') + '</div>' : '') +
+        (relations.length ? '<div style="' + relationCss + '">' + relations.map(function(r){ return '<span style="' + relationItemCss + '">' + esc(_cleanMathDisplayText((r.from || '') + ' -> ' + (r.to || '') + (r.label ? '：' + r.label : ''))) + '</span>'; }).join('') + '</div>' : '') +
         '<div style="' + mapCss + '">' + (nodeHtml || '<div class="empty-state"><p>暂无结构内容</p></div>') + '</div>' +
       '</div>' +
       '<div class="mindmap-backup" id="mindmap-backup" style="display:none"><pre class="mermaid-fallback">' + esc(mermaidCode || '暂无 Mermaid 备份') + '</pre></div>' +
@@ -924,7 +942,7 @@ function _renderPptPanel(el, d){
   if (!el) return;
   const title = d.title || 'PPT课件';
   const slideCount = d.slide_count || (Array.isArray(d.slides) ? d.slides.length : '?');
-  const slides = Array.isArray(d.slides) ? d.slides.slice(0, 8) : [];
+  const slides = Array.isArray(d.slides) ? d.slides.slice(0, 12) : [];
   const slideCss =
     'border:1px solid #d8defa;border-radius:8px;margin:14px 0;background:#f6f8ff;box-shadow:0 12px 26px rgba(15,23,42,.08);overflow:hidden';
   const frameCss =
@@ -941,6 +959,7 @@ function _renderPptPanel(el, d){
   const panelTitleCss = 'font-size:12px;font-weight:800;color:#4f46e5;margin-bottom:6px';
   const bulletCss = 'font-size:15px;line-height:1.48;color:#1f2937;margin:0;padding-left:20px;max-height:130px;overflow:hidden';
   const smallTextCss = 'font-size:14px;line-height:1.55;color:#334155;margin:0;max-height:116px;overflow:hidden';
+  const sectionItemCss = 'font-size:12px;line-height:1.45;color:#334155;margin:3px 0';
   const activityCss = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:auto';
   const calloutCss = 'border-left:5px solid #4f46e5;background:#eef2ff;border-radius:8px;padding:9px 12px;font-size:13px;line-height:1.45;color:#1e293b;max-height:64px;overflow:hidden';
   const notesCss = 'border-top:1px solid #e5e7eb;background:#fff;padding:12px 18px;font-size:12px;color:#64748b';
@@ -956,6 +975,15 @@ function _renderPptPanel(el, d){
       const takeaway = s.takeaway || '';
       const example = s.worked_example && s.worked_example.problem ? s.worked_example.problem : '';
       const callout = s.check_question || '';
+      const sections = Array.isArray(s.learning_sections) ? s.learning_sections.slice(0, 2) : [];
+      const leftSection = sections[0];
+      const rightSection = sections[1];
+      const renderLearningSection = function(sec, fallbackTitle, fallbackBody){
+        if (!sec) return '<div style="' + panelTitleCss + '">' + esc(fallbackTitle) + '</div><p style="' + smallTextCss + '">' + esc(fallbackBody) + '</p>';
+        const items = Array.isArray(sec.items) ? sec.items.slice(0, 4) : [];
+        return '<div style="' + panelTitleCss + '">' + esc(sec.title || fallbackTitle) + '</div>' +
+          (items.length ? items.map(function(it){ return '<div style="' + sectionItemCss + '">• ' + esc(it) + '</div>'; }).join('') : '<p style="' + smallTextCss + '">' + esc(sec.summary || fallbackBody) + '</p>');
+      };
       const notes = [
         (s.teacher_script || s.speaker_notes) ? '<strong>讲课提示：</strong>' + esc(s.teacher_script || s.speaker_notes) : '',
         example ? '<strong>例题：</strong>' + esc(example) : '',
@@ -969,12 +997,8 @@ function _renderPptPanel(el, d){
             (subtitle ? '<p style="' + subtitleCss + '">' + esc(subtitle) + '</p>' : '') +
             (lead ? '<div style="' + leadCss + '">课堂导入：' + esc(lead) + '</div>' : '') +
             '<div style="' + gridCss + '">' +
-              '<div style="' + panelCss + '"><div style="' + panelTitleCss + '">本页讲清楚</div>' +
-                (bullets.length ? '<ul style="' + bulletCss + '">' + bullets.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p style="' + smallTextCss + '">' + esc(subtitle || titleText) + '</p>') +
-              '</div>' +
-              '<div style="' + panelCss + '"><div style="' + panelTitleCss + '">老师怎么讲</div>' +
-                '<p style="' + smallTextCss + '">' + esc(visual || example || callout || '先讲直观含义，再落到定义、条件和例题。') + '</p>' +
-              '</div>' +
+              '<div style="' + panelCss + '">' + (sections.length ? renderLearningSection(leftSection, '本页讲清楚', subtitle || titleText) : '<div style="' + panelTitleCss + '">本页讲清楚</div>' + (bullets.length ? '<ul style="' + bulletCss + '">' + bullets.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<p style="' + smallTextCss + '">' + esc(subtitle || titleText) + '</p>')) + '</div>' +
+              '<div style="' + panelCss + '">' + (sections.length ? renderLearningSection(rightSection, '老师怎么讲', visual || example || callout || '先讲直观含义，再落到定义、条件和例题。') : '<div style="' + panelTitleCss + '">老师怎么讲</div><p style="' + smallTextCss + '">' + esc(visual || example || callout || '先讲直观含义，再落到定义、条件和例题。') + '</p>') + '</div>' +
             '</div>' +
             '<div style="' + activityCss + '">' +
               '<div style="' + calloutCss + '">' + esc(activity || callout || '请学生先说思路，再看标准步骤。') + '</div>' +
@@ -1980,6 +2004,39 @@ function _unwrapProfilePayload(res){
   return d || {};
 }
 
+function _unwrapProfileMetrics(res, profile, history){
+  const d = unwrapApi(res);
+  if (d && d.metrics && typeof d.metrics === 'object') return d.metrics;
+  const versions = (history && history.versions) || [];
+  const changes = (history && history.change_logs) || [];
+  const weak = _parseJsonList(profile && profile.weak_points);
+  const prefs = _parseJsonList(profile && profile.resource_preference);
+  const version = Number(profile && profile.profile_version) || 0;
+  const confidence = Math.round((Number(profile && profile.profile_confidence) || 0) * 100);
+  return {
+    profile_confidence_pct: confidence,
+    knowledge_score: version ? 62 : 0,
+    goal_clarity_score: profile && profile.learning_goal ? 82 : 0,
+    cognitive_match_score: profile && profile.cognitive_style ? 78 : 0,
+    weak_point_count: weak.length,
+    resource_preference_count: prefs.length,
+    learning_activity_score: Math.min(100, version * 16 + changes.length * 4),
+    review_risk_score: Math.min(100, weak.length * 18),
+    evidence_count: changes.length,
+    version_count: versions.length,
+  };
+}
+
+function _metricCard(label, value, suffix, desc, tone){
+  const n = Math.max(0, Math.min(100, Number(value) || 0));
+  const color = tone || (n >= 75 ? '#16a34a' : n >= 45 ? '#4f46e5' : '#ea580c');
+  return '<div class="course-card" style="min-height:104px">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><h4 style="margin:0">' + esc(label) + '</h4><strong style="font-size:22px;color:' + color + '">' + esc(String(value ?? 0)) + esc(suffix || '') + '</strong></div>' +
+    '<div style="height:8px;background:#eef2f7;border-radius:999px;overflow:hidden;margin:10px 0 8px"><span style="display:block;height:100%;width:' + n + '%;background:' + color + '"></span></div>' +
+    '<p style="font-size:12px;line-height:1.55;color:var(--gray-500);margin:0">' + esc(desc || '') + '</p>' +
+  '</div>';
+}
+
 async function loadProfileCenter(){
   const el = document.getElementById('page-profile');
   if (!el) return;
@@ -1996,20 +2053,27 @@ async function loadProfileCenter(){
     const prefs = _parseJsonList(profile.resource_preference);
     const versions = history.versions || [];
     const changes = history.change_logs || [];
+    const metrics = _unwrapProfileMetrics(profileRes, profile, history);
     const cards = [
-      ['知识基础', profile.knowledge_level || '未识别', '决定讲解深度和例题难度'],
-      ['学习目标', profile.learning_goal || '未识别', '用于规划资源包和学习路径'],
-      ['认知风格', profile.cognitive_style || '未识别', '决定图解、推导、案例或练习优先级'],
-      ['内容偏好', prefs.join(' · ') || '暂无', '用于推荐讲义、导图、题库、PPT、阅读或视频脚本'],
-      ['薄弱点', weakPoints.join(' · ') || '暂无', '用于错题复盘和专项资源生成'],
-      ['学习节奏', profile.pace_preference || 'moderate', '用于控制学习路径节奏和复习频率'],
-      ['学习历史', versions.length + ' 个画像版本 / ' + changes.length + ' 条变化', '来自对话、测验、错题和学习行为'],
-      ['情绪信心', profile.emotion_tendency || profile.confidence_level || '待识别', '用于调整鼓励、提示和辅导方式'],
+      ['知识基础', profile.knowledge_level || '未识别', metrics.knowledge_score || 0, '决定讲解深度和例题难度'],
+      ['学习目标', profile.learning_goal || '未识别', metrics.goal_clarity_score || 0, '用于规划资源包和学习路径'],
+      ['认知风格', profile.cognitive_style || '未识别', metrics.cognitive_match_score || 0, '决定图解、推导、案例或练习优先级'],
+      ['内容偏好', prefs.join(' · ') || '暂无', Math.min(100, (metrics.resource_preference_count || 0) * 25), '用于推荐讲义、导图、题库、PPT、阅读或视频脚本'],
+      ['薄弱点', weakPoints.join(' · ') || '暂无', Math.min(100, (metrics.weak_point_count || 0) * 25), '用于错题复盘和专项资源生成'],
+      ['学习节奏', profile.pace_preference || 'moderate', 62, '用于控制学习路径节奏和复习频率'],
+      ['学习历史', versions.length + ' 个画像版本 / ' + changes.length + ' 条变化', metrics.learning_activity_score || 0, '来自对话、测验、错题和学习行为'],
+      ['情绪信心', profile.emotion_tendency || profile.confidence_level || '待识别', Math.max(30, 100 - (metrics.review_risk_score || 0)), '用于调整鼓励、提示和辅导方式'],
     ];
     let h = '';
     h += '<div class="card"><div class="card-header"><h3>学习画像中心</h3><button class="btn btn-sm btn-outline" onclick="loadProfileCenter()">🔄 刷新</button></div>';
     h += '<div class="course-card"><h4>画像概览</h4><div class="course-meta"><span>' + esc(_profileSnapshotText(profile)) + '</span><span>确认状态 ' + esc(profile.profile_source || 'dialogue') + '</span><span>版本 #' + esc(String(profile.profile_version || 1)) + '</span></div></div>';
-    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>六维学习画像</h3></div><div class="grid grid-2">' + cards.map(c => '<div class="course-card"><h4>' + esc(c[0]) + '</h4><div class="course-meta"><span>' + esc(c[1]) + '</span></div><p style="font-size:12px;line-height:1.6;color:var(--gray-500);margin-top:6px">' + esc(c[2]) + '</p></div>').join('') + '</div></div>';
+    h += '<div class="grid grid-2" style="margin-top:12px">' +
+      _metricCard('画像置信度', metrics.profile_confidence_pct || 0, '%', '对当前画像判断的可靠程度，来自对话、测验和错题证据。') +
+      _metricCard('学习活跃度', metrics.learning_activity_score || 0, '%', '由对话轮次、画像版本和错题行为综合估计。') +
+      _metricCard('复习风险', metrics.review_risk_score || 0, '%', '薄弱点和基础水平共同决定，越高越需要专项复盘。', '#e11d48') +
+      _metricCard('证据数量', metrics.evidence_count || 0, '', '系统实际记录的画像变化依据条数。', '#4f46e5') +
+    '</div>';
+    h += '<div class="card" style="margin-top:12px"><div class="card-header"><h3>六维学习画像</h3></div><div class="grid grid-2">' + cards.map(c => '<div class="course-card"><div style="display:flex;justify-content:space-between;gap:8px"><h4>' + esc(c[0]) + '</h4><strong style="color:var(--primary)">' + esc(String(c[2])) + '%</strong></div><div class="course-meta"><span>' + esc(c[1]) + '</span></div><div style="height:6px;background:#eef2f7;border-radius:999px;overflow:hidden;margin-top:8px"><span style="display:block;height:100%;width:' + Math.max(0, Math.min(100, Number(c[2]) || 0)) + '%;background:var(--primary)"></span></div><p style="font-size:12px;line-height:1.6;color:var(--gray-500);margin-top:6px">' + esc(c[3]) + '</p></div>').join('') + '</div></div>';
     h += '<div class="grid grid-2" style="margin-top:12px">';
     h += '<div class="card"><div class="card-header"><h3>画像如何参与生成</h3></div><div class="course-card"><h4>问答适配</h4><div class="course-meta"><span>根据知识基础和认知风格调整回答深度</span></div></div><div class="course-card"><h4>资源包适配</h4><div class="course-meta"><span>根据内容偏好和薄弱点选择资源类型</span></div></div><div class="course-card"><h4>学习路径适配</h4><div class="course-meta"><span>根据学习节奏和掌握度安排复习顺序</span></div></div></div>';
     h += '<div class="card"><div class="card-header"><h3>画像操作</h3></div><div class="course-card"><h4>自动对话构建</h4><div class="course-meta"><span>通过自然语言提取并持续修正画像</span></div></div><div class="course-card"><h4>历史版本</h4><div class="course-meta"><span>' + esc(String(versions.length)) + ' 个版本</span></div></div><div class="course-card"><h4>变更日志</h4><div class="course-meta"><span>' + esc(String(changes.length)) + ' 条变化记录</span></div></div></div>';
