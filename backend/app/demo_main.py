@@ -65,14 +65,10 @@ def _coerce_llm_timeout(value: Any = None) -> int:
 
 
 def _normalize_spark_api_password(value: str | None) -> str:
-    """Allow users to paste either APIPassword or APIKey:APIPassword."""
+    """Allow users to paste either APIPassword or APIKey:APISecret/APIPassword pairs."""
     raw = str(value or "").strip().strip('"').strip("'")
     if raw.lower().startswith("bearer "):
         raw = raw[7:].strip()
-    if ":" in raw:
-        left, right = raw.split(":", 1)
-        if left.strip() and right.strip():
-            return right.strip()
     return raw
 
 

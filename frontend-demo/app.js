@@ -1617,7 +1617,7 @@ async function loadSettings(){
       '<div class="form-group"><label>科大讯飞 模型名称</label><input id="spark-model" class="input" value="' + esc(d.spark_model || sparkDefaults.model) + '"></div>' +
       '<div class="form-group"><label>超时(秒)</label><input id="spark-timeout" class="input" type="number" min="60" max="600" value="180"></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button class="btn btn-primary" onclick="_saveLlmProvider(\'spark\')">保存科大讯飞配置</button><button class="btn btn-outline" onclick="_testLlmProvider(\'spark\')">测试科大讯飞连接</button></div>' +
-      '<p id="spark-test-result" style="font-size:11px;color:var(--gray-400);margin-top:-6px;margin-bottom:16px">如果从控制台复制了 APIKey:APIPassword，可直接粘贴；系统会自动使用 APIPassword，密钥不会回显。</p>' +
+      '<p id="spark-test-result" style="font-size:11px;color:var(--gray-400);margin-top:-6px;margin-bottom:16px">如果从控制台复制了 APIKey:APIPassword，可整串粘贴；系统会原样用于星火兼容接口，密钥不会回显。</p>' +
       '<div class="form-group"><label>DeepSeek API Key</label><input id="deepseek-api-key" class="input" type="password" placeholder="输入 DeepSeek API Key"></div>' +
       '<div class="form-group"><label>DeepSeek Base URL</label><input id="deepseek-base-url" class="input" value="' + esc(deepseekDefaults.base_url) + '"></div>' +
       '<div class="form-group"><label>DeepSeek 模型名称</label><input id="deepseek-model" class="input" value="' + esc(d.llm_model || deepseekDefaults.model) + '"></div>' +
