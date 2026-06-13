@@ -749,18 +749,48 @@ function _renderMindmapTreePanel(el, data, title){
   const tree = (data && data.tree) || _mindmapTreeFromMermaid(data && (data.mermaid || data.content), title);
   const mermaidCode = (data && (data.mermaid || data.content)) || '';
   const nodes = Array.isArray(tree.nodes) ? tree.nodes : [];
+  const center = tree.center || { title: tree.title || title || '当前知识点', summary: tree.subtitle || '' };
+  const relations = Array.isArray(tree.relations) ? tree.relations : [];
+  const typeStyle = {
+    prerequisite: ['#ecfeff', '#0891b2', '先修'],
+    definition: ['#eef2ff', '#4f46e5', '定义'],
+    method: ['#f0fdf4', '#16a34a', '方法'],
+    practice: ['#fff7ed', '#ea580c', '题型'],
+    pitfall: ['#fff1f2', '#e11d48', '易错'],
+    link: ['#f5f3ff', '#7c3aed', '连接'],
+    review: ['#f8fafc', '#475569', '复盘'],
+  };
+  const mapCss = 'display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch';
+  const centerCss = 'border:1px solid #c7d2fe;background:linear-gradient(135deg,#eef2ff,#fff);border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 10px 24px rgba(79,70,229,.08)';
+  const centerTitleCss = 'font-size:20px;font-weight:800;color:#312e81;margin:0 0 8px';
+  const centerMetaCss = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:10px';
+  const tagCss = 'font-size:11px;border:1px solid #c7d2fe;background:#fff;color:#4338ca;border-radius:999px;padding:4px 8px';
+  const relationCss = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px';
+  const relationItemCss = 'font-size:11px;color:#475569;border:1px dashed #cbd5e1;background:#fff;border-radius:999px;padding:5px 9px';
   const nodeHtml = nodes.map(function(node, idx){
     const children = Array.isArray(node.children) ? node.children : [];
-    return '<details class="mindmap-tree-card" open>' +
-      '<summary><span class="mm-order">' + (idx + 1) + '</span><span><strong>' + esc(node.title || node.label || '知识模块') + '</strong>' +
-      (node.summary ? '<small>' + esc(node.summary) + '</small>' : '') + '</span></summary>' +
-      (children.length ? '<ul>' + children.map(function(child){ return '<li>' + esc(typeof child === 'object' ? (child.title || child.label || child.summary || '') : child) + '</li>'; }).join('') + '</ul>' : '') +
-    '</details>';
+    const style = typeStyle[node.type] || ['#fff', '#4f46e5', String(idx + 1)];
+    const childHtml = children.length ? children.map(function(child){
+      const label = typeof child === 'object' ? (child.label || child.title || child.summary || '') : child;
+      const hint = typeof child === 'object' ? (child.hint || child.summary || '') : '';
+      return '<div style="border-top:1px solid #eef2f7;padding:8px 0 0;margin-top:8px">' +
+        '<div style="font-size:13px;font-weight:700;color:#1f2937">' + esc(label) + '</div>' +
+        (hint ? '<div style="font-size:11px;line-height:1.55;color:#64748b;margin-top:2px">' + esc(hint) + '</div>' : '') +
+      '</div>';
+    }).join('') : '';
+    return '<section style="border:1px solid #e5e7eb;background:' + style[0] + ';border-radius:12px;padding:13px 14px;min-height:170px;box-shadow:0 8px 18px rgba(15,23,42,.04)">' +
+      '<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">' +
+        '<span style="width:34px;height:34px;border-radius:10px;background:' + style[1] + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0">' + esc(style[2]) + '</span>' +
+        '<div><div style="font-size:15px;font-weight:800;color:#111827">' + esc(node.title || node.label || '知识模块') + '</div>' +
+        (node.summary ? '<div style="font-size:12px;line-height:1.55;color:#475569;margin-top:3px">' + esc(node.summary) + '</div>' : '') + '</div>' +
+      '</div>' +
+      childHtml +
+    '</section>';
   }).join('');
   el.innerHTML =
     '<div class="mindmap-product mindmap-readable-product">' +
       '<div class="mindmap-toolbar">' +
-        '<div class="mt-title-area"><div class="mt-title">' + esc(title || tree.title || '知识结构图') + '</div><div class="mt-subtitle">可折叠知识树，优先保证看得清；Mermaid 原图作为备份查看</div></div>' +
+        '<div class="mt-title-area"><div class="mt-title">' + esc(title || tree.title || '知识结构图') + '</div><div class="mt-subtitle">关系型知识地图：先看结构关系，再进入讲义或练习</div></div>' +
         '<div class="mt-actions">' +
           '<span class="mindmap-status-tag generated">已生成</span>' +
           '<button type="button" class="btn btn-sm btn-outline" onclick="_toggleMindmapFullscreen()">全屏/退出</button>' +
@@ -768,11 +798,14 @@ function _renderMindmapTreePanel(el, data, title){
         '</div>' +
       '</div>' +
       '<div class="mindmap-tree-readable">' +
-        '<div class="mindmap-root-card"><h4>' + esc(tree.title || title || '当前知识点') + '</h4><p>' + esc(tree.subtitle || '按学习顺序展开：教材定位、核心定义、解题流程、常见误区、复盘路径。') + '</p></div>' +
-        (nodeHtml || '<div class="empty-state"><p>暂无结构内容</p></div>') +
+        '<div style="' + centerCss + '"><h4 style="' + centerTitleCss + '">' + esc(center.title || tree.title || title || '当前知识点') + '</h4><p style="font-size:13px;line-height:1.7;color:#475569;margin:0">' + esc(center.summary || tree.subtitle || '从中心概念向外看先修、定义、方法、题型、误区和后续连接。') + '</p>' +
+          (Array.isArray(center.tags) && center.tags.length ? '<div style="' + centerMetaCss + '">' + center.tags.map(function(t){ return '<span style="' + tagCss + '">' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
+        '</div>' +
+        (relations.length ? '<div style="' + relationCss + '">' + relations.map(function(r){ return '<span style="' + relationItemCss + '">' + esc((r.from || '') + ' -> ' + (r.to || '') + (r.label ? '：' + r.label : '')) + '</span>'; }).join('') + '</div>' : '') +
+        '<div style="' + mapCss + '">' + (nodeHtml || '<div class="empty-state"><p>暂无结构内容</p></div>') + '</div>' +
       '</div>' +
       '<div class="mindmap-backup" id="mindmap-backup" style="display:none"><pre class="mermaid-fallback">' + esc(mermaidCode || '暂无 Mermaid 备份') + '</pre></div>' +
-      '<div class="mindmap-info-bar"><span class="mi-item"><span class="mi-dot"></span>默认显示可读知识树</span><span class="mi-item">点击模块可折叠，适合答辩和实际学习</span></div>' +
+      '<div class="mindmap-info-bar"><span class="mi-item"><span class="mi-dot"></span>默认显示关系型知识地图</span><span class="mi-item">模块颜色区分先修、定义、方法、题型、误区和复盘</span></div>' +
     '</div>';
 }
 

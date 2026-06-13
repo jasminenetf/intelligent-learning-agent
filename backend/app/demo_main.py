@@ -492,31 +492,44 @@ def _safe_node(text: str, limit: int = 28) -> str:
 def _structured_mindmap(topic: str) -> str:
     ctx = _gaoshu_context(topic)
     t = _safe_node(topic, 34)
-    step1 = _safe_node(ctx["steps"][0] if ctx["steps"] else "先明确对象与条件", 30)
-    step2 = _safe_node(ctx["steps"][1] if len(ctx["steps"]) > 1 else "再选择合适方法", 30)
-    step3 = _safe_node(ctx["steps"][2] if len(ctx["steps"]) > 2 else "最后回到定义验证", 30)
+    keyword = _safe_node(ctx["keyword"], 18)
+    summary = _safe_node(ctx["summary"], 38)
+    step1 = _safe_node(ctx["steps"][0] if ctx["steps"] else "先明确对象与条件", 28)
+    step2 = _safe_node(ctx["steps"][1] if len(ctx["steps"]) > 1 else "再选择合适方法", 28)
+    step3 = _safe_node(ctx["steps"][2] if len(ctx["steps"]) > 2 else "最后回到定义验证", 28)
     pit1 = _safe_node(ctx["pitfalls"][0] if ctx["pitfalls"] else "只记公式不看条件", 30)
     pit2 = _safe_node(ctx["pitfalls"][1] if len(ctx["pitfalls"]) > 1 else "跳过关键依据", 30)
     pit3 = _safe_node(ctx["pitfalls"][2] if len(ctx["pitfalls"]) > 2 else "错题不复盘原因", 30)
     return "\n".join([
         "flowchart TB",
-        f'  A["{t}"]',
-        f'  A --> B["1 教材定位"]',
-        f'  B --> B1["{_safe_node(ctx["chapter"], 30)}"]',
-        f'  B1 --> C["2 核心定义"]',
-        f'  C --> C1["{_safe_node(ctx["summary"], 36)}"]',
-        f'  C1 --> D["3 解题流程"]',
-        f'  D --> D1["{step1}"]',
-        f'  D1 --> D2["{step2}"]',
-        f'  D2 --> D3["{step3}"]',
-        f'  D3 --> E["4 常见误区"]',
-        f'  E --> E1["{pit1}"]',
-        f'  E --> E2["{pit2}"]',
-        f'  E --> E3["{pit3}"]',
-        f'  E3 --> F["5 巩固路径"]',
-        '  F --> F1["先做定义判断题"]',
-        '  F1 --> F2["再做计算与证明题"]',
-        '  F2 --> F3["错题回到条件复盘"]',
+        f'  A(("{t}"))',
+        f'  A --> B["教材坐标<br/>{_safe_node(ctx["chapter"], 24)}"]',
+        f'  A --> C["核心概念<br/>{keyword}"]',
+        f'  A --> D["条件判定"]',
+        f'  A --> E["方法路径"]',
+        f'  A --> F["题型入口"]',
+        f'  A --> G["易错雷区"]',
+        f'  A --> H["知识连接"]',
+        f'  C --> C1["{summary}"]',
+        f'  D --> D1["对象是什么"]',
+        f'  D --> D2["条件够不够"]',
+        f'  D --> D3["结论问什么"]',
+        f'  E --> E1["{step1}"]',
+        f'  E --> E2["{step2}"]',
+        f'  E --> E3["{step3}"]',
+        f'  F --> F1["定义判断题"]',
+        f'  F --> F2["计算/证明题"]',
+        f'  F --> F3["错因解释题"]',
+        f'  G --> G1["{pit1}"]',
+        f'  G --> G2["{pit2}"]',
+        f'  G --> G3["{pit3}"]',
+        '  H --> H1["函数"]',
+        '  H --> H2["连续"]',
+        '  H --> H3["导数"]',
+        '  H --> H4["积分"]',
+        '  D -.决定能否使用.-> E',
+        '  E -.暴露薄弱点.-> G',
+        '  F -.练习反馈.-> G',
     ])
 
 
@@ -524,45 +537,106 @@ def _mindmap_tree(topic: str) -> dict[str, Any]:
     ctx = _gaoshu_context(topic)
     profile = STATE.get("profile", {})
     weak_points = _profile_list(profile.get("weak_points")) or [ctx["keyword"]]
+    keyword = ctx["keyword"]
+    prerequisite_map = {
+        "极限": ["函数与自变量", "邻域/去心邻域", "左右趋近", "基本代数化简"],
+        "导数": ["函数图像", "平均变化率", "极限思想", "切线斜率"],
+        "积分": ["函数面积模型", "原函数", "求和思想", "导数反运算"],
+    }
+    method_map = {
+        "极限": ["直接代入", "因式分解约去零因子", "左右极限分别判断", "等价无穷小/重要极限"],
+        "导数": ["定义法求导", "基本求导公式", "四则运算求导", "复合函数链式法则"],
+        "积分": ["基本积分公式", "换元积分法", "分部积分法", "定积分几何意义"],
+    }
+    question_map = {
+        "极限": ["判断极限是否存在", "求具体极限值", "左右极限比较", "由极限反推参数"],
+        "导数": ["求导函数", "求某点切线斜率", "判断单调性", "最值/变化率应用"],
+        "积分": ["求不定积分", "求定积分", "面积/累积量应用", "换元或分部选择"],
+    }
+    link_map = {
+        "极限": ["连续：左右极限相等且等于函数值", "导数：导数定义本质是极限", "积分：定积分可由极限和逼近理解"],
+        "导数": ["极限：导数是差商极限", "函数：用导数研究单调和变化", "积分：积分与导数互为反向理解"],
+        "积分": ["导数：不定积分寻找原函数", "极限：定积分来自分割求和取极限", "函数：被积函数决定累积对象"],
+    }
+    prerequisites = prerequisite_map.get(keyword, ["概念定义", "适用条件", "基本公式", "教材例题"])
+    methods = method_map.get(keyword, ctx["steps"])
+    question_types = question_map.get(keyword, ["定义判断", "公式应用", "证明推导", "错因复盘"])
+    links = link_map.get(keyword, ["前置概念", "后续应用", "相邻章节", "综合题"])
     return {
         "title": topic or ctx["keyword"],
-        "subtitle": "按“先理解、再做题、最后复盘”的学习顺序组织",
+        "subtitle": "按知识关系组织：先修基础、定义条件、方法路径、题型入口、易错雷区和后续连接。",
+        "layout": "concept_map",
+        "center": {
+            "title": topic or ctx["keyword"],
+            "summary": ctx["summary"],
+            "tags": [ctx["chapter"], f"薄弱点：{', '.join(weak_points[:2])}", "用于定位学习路径"],
+        },
+        "relations": [
+            {"from": "先修基础", "to": "定义拆解", "label": "支撑理解"},
+            {"from": "定义拆解", "to": "方法路径", "label": "决定可用方法"},
+            {"from": "方法路径", "to": "题型入口", "label": "落到练习"},
+            {"from": "题型入口", "to": "易错雷区", "label": "暴露薄弱点"},
+            {"from": "知识连接", "to": "后续学习", "label": "进入综合应用"},
+        ],
         "nodes": [
             {
-                "title": "1. 教材定位",
-                "summary": f"对应《高等数学上册》：{ctx['chapter']}",
+                "title": "先修基础",
+                "type": "prerequisite",
+                "summary": "看不懂当前概念时，先补这些前置块。",
                 "children": [
-                    f"当前问题聚焦：{ctx['keyword']}",
-                    "先明确它和后续导数、连续、积分的关系",
-                    "学习时先读教材概念，再看例题步骤",
+                    {"label": item, "hint": "用于支撑定义理解"} for item in prerequisites
                 ],
             },
             {
-                "title": "2. 核心理解",
-                "summary": ctx["summary"],
+                "title": "定义拆解",
+                "type": "definition",
+                "summary": "把一句定义拆成对象、条件、结论三部分。",
                 "children": [
-                    "先用自己的话说出它研究什么",
-                    "再把口语理解翻译成教材定义",
-                    "最后圈出定义里的对象、条件和结论",
+                    {"label": "研究对象", "hint": f"当前聚焦：{keyword}"},
+                    {"label": "适用条件", "hint": ctx["steps"][0] if ctx["steps"] else "先检查题目条件"},
+                    {"label": "目标结论", "hint": ctx["summary"]},
                 ],
             },
             {
-                "title": "3. 解题流程",
-                "summary": "把定义变成每道题都能执行的检查表",
-                "children": ctx["steps"],
+                "title": "方法路径",
+                "type": "method",
+                "summary": "从条件选择方法，不是看到关键词就套公式。",
+                "children": [
+                    {"label": item, "hint": "先判断适用条件，再动笔"} for item in methods
+                ],
             },
             {
-                "title": "4. 常见误区",
-                "summary": "错题优先回到概念和条件，不直接背答案",
-                "children": ctx["pitfalls"],
+                "title": "题型入口",
+                "type": "practice",
+                "summary": "把知识点落到题目，知道该练什么。",
+                "children": [
+                    {"label": item, "hint": "对应练习题和错题复盘"} for item in question_types
+                ],
             },
             {
-                "title": "5. 个性化复盘",
+                "title": "易错雷区",
+                "type": "pitfall",
+                "summary": "用于错题归因，避免重复犯同类错误。",
+                "children": [
+                    {"label": item, "hint": "错题本重点追踪"} for item in ctx["pitfalls"]
+                ],
+            },
+            {
+                "title": "知识连接",
+                "type": "link",
+                "summary": "看清它和前后章节的关系，避免孤立记忆。",
+                "children": [
+                    {"label": item, "hint": "后续学习或综合题会用到"} for item in links
+                ],
+            },
+            {
+                "title": "后续学习",
+                "type": "review",
                 "summary": f"画像薄弱点：{', '.join(weak_points[:3])}",
                 "children": [
-                    "先看讲义补概念",
-                    "再用本结构图串关系",
-                    "最后完成 3 道同主题练习并记录错因",
+                    {"label": "先修补缺", "hint": "先看定义和条件"},
+                    {"label": "同主题练习", "hint": "做 3 道基础题确认会用"},
+                    {"label": "错因回流", "hint": "把错误写入画像和学习路径"},
                 ],
             },
         ],
@@ -740,6 +814,7 @@ def _llm_generate_mindmap(topic: str) -> dict[str, Any] | None:
     ]
     mermaid = "\n".join(lines)
     return {
+        "tree": _mindmap_tree(topic),
         "mermaid": mermaid,
         "content": mermaid,
         "generated_by": provider,
@@ -1242,7 +1317,16 @@ def _resource_download_text(payload: dict[str, Any], item: dict[str, Any]) -> st
             if node.get("summary"):
                 lines.append(str(node.get("summary")))
             for child in node.get("children") or []:
-                lines.append(f"- {child}")
+                if isinstance(child, dict):
+                    label = child.get("label") or child.get("title") or child.get("summary") or ""
+                    hint = child.get("hint") or child.get("summary") or ""
+                    lines.append(f"- {label}" + (f"：{hint}" if hint else ""))
+                else:
+                    lines.append(f"- {child}")
+        if tree.get("relations"):
+            lines.append("\n## 关系说明")
+            for rel in tree.get("relations") or []:
+                lines.append(f"- {rel.get('from', '')} -> {rel.get('to', '')}" + (f"：{rel.get('label')}" if rel.get("label") else ""))
         lines.extend(["", "## Mermaid 备份", str(payload.get("mermaid") or payload.get("content") or "")])
         return "\n".join(lines)
     if resource_type == "quiz":
